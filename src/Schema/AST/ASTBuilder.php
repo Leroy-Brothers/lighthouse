@@ -130,6 +130,7 @@ class ASTBuilder
 
         // TODO seperate out into modules
         $this->addPaginationInfoTypes();
+        $this->addAggregationTypes();
         $this->addNodeSupport();
 
         // Listeners may manipulate the DocumentAST that is passed by reference
@@ -248,6 +249,39 @@ class ASTBuilder
      *
      * @return void
      */
+    protected function addAggregationTypes(): void
+    {
+        $this->documentAST->setTypeDefinition(
+            PartialParser::objectTypeDefinition(/** @lang GraphQL */ '
+                "Aggregations of the corresponding list of items."
+                type PageAggregation {
+                  "Name of the aggregation"
+                  name: String!
+
+                  "Aggregation buckets"
+                  buckets: [PageAggregationBucket]
+                }
+            ')
+        );
+        $this->documentAST->setTypeDefinition(
+            PartialParser::objectTypeDefinition(/** @lang GraphQL */ '
+                "Aggregation bucket of the corresponding list of items."
+                type PageAggregationBucket {
+                  "Key of the bucket"
+                  value: String!
+
+                  "Count of the aggregation"
+                  count: Int
+                }
+            ')
+        );
+    }
+
+    /**
+     * Add the types required for pagination.
+     *
+     * @return void
+     */
     protected function addPaginationInfoTypes(): void
     {
         $this->documentAST->setTypeDefinition(
@@ -277,6 +311,9 @@ class ASTBuilder
 
                   "Total items available in the collection."
                   total: Int!
+
+                  "Aggregations available in the collection."
+                  aggregations: [PageAggregation]
                 }
             ')
         );
@@ -308,6 +345,9 @@ class ASTBuilder
 
                   "Last page in connection."
                   lastPage: Int
+
+                  "Aggregations available in the collection."
+                  aggregations: [PageAggregation]
                 }
             ')
         );

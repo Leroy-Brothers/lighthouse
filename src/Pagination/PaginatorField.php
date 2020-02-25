@@ -2,7 +2,7 @@
 
 namespace Nuwave\Lighthouse\Pagination;
 
-use Illuminate\Contracts\Pagination\LengthAwarePaginator;
+use Nuwave\Lighthouse\Support\Contracts\AggregationPaginator;
 use Illuminate\Support\Collection;
 
 class PaginatorField
@@ -10,10 +10,10 @@ class PaginatorField
     /**
      * Resolve paginator info for connection.
      *
-     * @param  \Illuminate\Pagination\LengthAwarePaginator  $root
+     * @param  \Nuwave\Lighthouse\Support\Contracts\AggregationPaginator  $root
      * @return array
      */
-    public function paginatorInfoResolver(LengthAwarePaginator $root): array
+    public function paginatorInfoResolver(AggregationPaginator $root): array
     {
         return [
             'count' => $root->count(),
@@ -30,10 +30,10 @@ class PaginatorField
     /**
      * Resolve data for connection.
      *
-     * @param  \Illuminate\Pagination\LengthAwarePaginator  $root
+     * @param  \Nuwave\Lighthouse\Support\Contracts\AggregationPaginator  $root
      * @return \Illuminate\Support\Collection
      */
-    public function dataResolver(LengthAwarePaginator $root): Collection
+    public function dataResolver(AggregationPaginator $root): Collection
     {
         return $root->values();
     }

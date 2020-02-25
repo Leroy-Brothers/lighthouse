@@ -4,6 +4,7 @@ namespace Nuwave\Lighthouse\Pagination;
 
 use GraphQL\Error\Error;
 use Illuminate\Support\Arr;
+use Illuminate\Pagination\Paginator;
 use Laravel\Scout\Builder as ScoutBuilder;
 
 class PaginationArgs
@@ -86,7 +87,58 @@ class PaginationArgs
     public function applyToBuilder($builder)
     {
         if ($builder instanceof ScoutBuilder) {
-            return $builder->paginate($this->first, 'page', $this->page);
+            /*
+            use AggregationPaginator instead of default LengtAwarePaginator
+            see original approach in ScoutBuilder::paginate
+            */
+
+            $engine = $builder->model->searchableUsing();
+
+            $page = $this->page;
+
+            $perPage = $this->first;
+
+            $results = $builder->model->newCollection($engine->map(
+                $builder, $rawResults = $engine->paginate($builder, $perPage, $page), $builder->model
+            )->all());
+
+            $aggregations = [];
+            $raw = $builder->raw();
+            if (!empty($raw['aggregations'])) {
+                // format aggregations to expected format
+                /*
+                from
+                [name => [buckets => [[key, doc_count]]]]
+
+                to
+                [name => 'name', buckets => [value => key, count => doc_count]]
+                */
+                $aggregations = array_map(function($key, $value) {
+                    return [
+                        'name' => $key,
+                        'buckets' => array_map(function($bucket) {
+                            return [
+                                'value' => $bucket['key'],
+                                'count' => $bucket['doc_count'],
+                            ];
+                        }, $value['buckets']),
+                    ];
+                }, array_keys($raw['aggregations']), $raw['aggregations']);
+            }
+
+            $paginator = (new AggregationPaginator(
+                $results,
+                $engine->getTotalCount($rawResults),
+                $perPage,
+                $this->page,
+                [
+                    'path' => Paginator::resolveCurrentPath(),
+                    'pageName' => 'page',
+                ],
+                $aggregations
+            ));
+
+            return $paginator->appends('query', $builder->query);
         }
 
         return $builder->paginate($this->first, ['*'], 'page', $this->page);

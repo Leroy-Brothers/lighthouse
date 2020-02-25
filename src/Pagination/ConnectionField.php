@@ -5,7 +5,9 @@ namespace Nuwave\Lighthouse\Pagination;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Contracts\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
+use Nuwave\Lighthouse\Support\Contracts\AggregationPaginator;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
+use \Laravel\Scout\Builder;
 
 class ConnectionField
 {
@@ -13,13 +15,18 @@ class ConnectionField
      * Resolve page info for connection.
      *
      * @param  \Illuminate\Contracts\Pagination\LengthAwarePaginator  $paginator
+     * @param  array  $args
+     * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
+     * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
      * @return array
      */
-    public function pageInfoResolver(LengthAwarePaginator $paginator): array
+    public function pageInfoResolver(LengthAwarePaginator $paginator, array $args = null, GraphQLContext $context = null, ResolveInfo $resolveInfo = null): array
     {
+        // @TODO check args for aggregation
         return [
             'total' => $paginator->total(),
             'count' => $paginator->count(),
+            'aggregations' => $paginator instanceof AggregationPaginator ? $paginator->aggregations() : [],
             'currentPage' => $paginator->currentPage(),
             'lastPage' => $paginator->lastPage(),
             'hasNextPage' => $paginator->hasMorePages(),

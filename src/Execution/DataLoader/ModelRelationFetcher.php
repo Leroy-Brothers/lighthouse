@@ -11,6 +11,7 @@ use Illuminate\Pagination\LengthAwarePaginator;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Str;
 use Nuwave\Lighthouse\Pagination\PaginationArgs;
+use Nuwave\Lighthouse\Pagination\AggregationPaginator;
 use ReflectionClass;
 use ReflectionMethod;
 
@@ -250,7 +251,7 @@ class ModelRelationFetcher
             );
 
             $paginator = app()->makeWith(
-                LengthAwarePaginator::class,
+                AggregationPaginator::class,
                 [
                     'items' => $model->getRelation($relationName),
                     'total' => $total,

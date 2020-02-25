@@ -59,6 +59,12 @@ directive @paginate(
   in case the client does not request it explicitly
   """
   defaultCount: Int
+
+  """
+  Limit the aggregation keys to include, includes all if omitted
+  """
+  aggregations: [String!]
+
 ) on FIELD_DEFINITION
 SDL;
     }
