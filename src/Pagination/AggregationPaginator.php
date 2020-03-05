@@ -3,7 +3,7 @@
 namespace Nuwave\Lighthouse\Pagination;
 
 use Nuwave\Lighthouse\Support\Contracts\AggregationPaginator as AggregationPaginatorContract;
-use Illuminate\Pagination\LengthAwarePaginator;
+use \Illuminate\Pagination\LengthAwarePaginator;
 
 class AggregationPaginator extends LengthAwarePaginator implements AggregationPaginatorContract
 {

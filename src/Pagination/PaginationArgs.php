@@ -108,10 +108,10 @@ class PaginationArgs
                 // format aggregations to expected format
                 /*
                 from
-                [name => [buckets => [[key, doc_count]]]]
+                [name => [buckets => [[key, doc_count, top_hits]]]]
 
                 to
-                [name => 'name', buckets => [value => key, count => doc_count]]
+                [name => 'name', buckets => [value => key, count => doc_count, top => [top_hits]]]
                 */
                 $aggregations = array_map(function($key, $value) {
                     return [
@@ -120,6 +120,7 @@ class PaginationArgs
                             return [
                                 'value' => $bucket['key'],
                                 'count' => $bucket['doc_count'],
+                                'top' => $bucket['top_hits']['hits']['hits']
                             ];
                         }, $value['buckets']),
                     ];
