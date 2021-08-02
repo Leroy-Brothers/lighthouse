@@ -26,12 +26,11 @@ abstract class TestCase extends BaseTestCase
 
 The most natural way of testing your GraphQL API is to run actual GraphQL queries.
 
-The `graphQL` test helper runs a query on your GraphQL endpoint and returns a `TestResponse`. 
+The `graphQL` test helper runs a query on your GraphQL endpoint and returns a `TestResponse`.
 
 ```php
 public function testQueriesPosts(): void
 {
-    /** @var \Illuminate\Foundation\Testing\TestResponse $response */
     $response = $this->graphQL(/** @lang GraphQL */ '
     {
         posts {
@@ -48,7 +47,6 @@ If you want to use variables within your query, pass an associative array as the
 ```php
 public function testCreatePost(): void
 {
-    /** @var \Illuminate\Foundation\Testing\TestResponse $response */
     $response = $this->graphQL(/** @lang GraphQL */ '
         mutation CreatePost($title: String!) {
             createPost(title: $title) {
@@ -117,13 +115,69 @@ public function testOrdersUsersByName(): void
 
     $this->assertSame(
         [
-            'Benedikt'
+            'Benedikt',
             'Chris',
             'Oliver',
         ],
         $names
     );
 }
+```
+
+### TestResponse Assertion Mixins
+
+Lighthouse conveniently provides additional assertions as mixins to the `TestResponse` class.
+Make sure to [generate the latest IDE-helper file](../api-reference/commands.md#ide-helper) to get proper autocompletion:
+
+```bash
+php artisan lighthouse:ide-helper
+```
+
+The provided assertions are prefixed with `assertGraphQL` for easy discovery.
+They offer useful shortcuts to common testing tasks.
+For example, you might want to ensure that validation works properly:
+
+```php
+$this
+    ->graphQL(/** @lang GraphQL */ '
+    mutation {
+        createUser(email: "invalid email")
+    }
+    ')
+    ->assertGraphQLValidationKeys(['email']);
+```
+
+## Testing Errors
+
+Depending on your debug and error handling configuration, Lighthouse catches most if
+not all errors produced within queries and includes them within the result.
+
+One way to test for errors is to examine the `TestResponse`, either by looking
+at the JSON response manually or by using the provided [assertion mixins](#testresponse-assertion-mixins)
+such as `assertGraphQLErrorMessage()`:
+
+```php
+$this
+    ->graphQL(/** @lang GraphQL */ '
+    mutation {
+        shouldTriggerSomeError
+    }
+    ')
+    ->assertGraphQLErrorMessage($expectedMessage);
+```
+
+Another way is to leverage PHPUnit's built-in methods such as `expectException()`.
+You must disable Lighthouse's error handling with `rethrowGraphQLErrors()` to ensure errors reach your test:
+
+```php
+$this->rethrowGraphQLErrors();
+
+$this->expectException(SomethingWentWrongException::class);
+$this->graphQL(/** @lang GraphQL */ '
+{
+    oops
+}
+');
 ```
 
 ## Simulating File Uploads
@@ -134,28 +188,25 @@ Since multipart form requests are tricky to construct, you can just use the `mul
 helper method.
 
 ```php
-$this->multipartGraphQL(
-    [
-        'operations' => /** @lang JSON */
-            '
-            {
-                "query": "mutation Upload($file: Upload!) { upload(file: $file) }",
-                "variables": {
-                    "file": null
-                }
-            }
-        ',
-        'map' => /** @lang JSON */
-            '
-            {
-                "0": ["variables.file"]
-            }
-        ',
+$operations = [
+    'operationName' => 'upload',
+    'query' => 'mutation upload ($file: Upload!) {
+                    upload (file: $file)
+                }',
+    'variables' => [
+        'file' => null,
     ],
-    [
-        '0' => UploadedFile::fake()->create('image.jpg', 500),
-    ]
-)
+];
+
+$map = [
+    '0' => ['variables.file'],
+];
+
+$file = [
+    '0' => UploadedFile::fake()->create('test.pdf', 500),
+];
+
+$this->multipartGraphQL($operations, $map, $file);
 ```
 
 ## Introspection
@@ -171,7 +222,7 @@ The `introspect()` helper method runs the full introspection query against your 
 $introspectionResult = $this->introspect();
 ```
 
-Most often, you will want to look for a specific named type. 
+Most often, you will want to look for a specific named type.
 
 ```php
 $generatedType = $this->introspectType('Generated');

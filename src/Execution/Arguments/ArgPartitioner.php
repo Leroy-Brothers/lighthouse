@@ -9,8 +9,9 @@ use Illuminate\Database\Eloquent\Relations\HasOne;
 use Illuminate\Database\Eloquent\Relations\MorphMany;
 use Illuminate\Database\Eloquent\Relations\MorphOne;
 use Illuminate\Database\Eloquent\Relations\MorphToMany;
+use Nuwave\Lighthouse\Exceptions\DefinitionException;
 use Nuwave\Lighthouse\Support\Contracts\ArgResolver;
-use Nuwave\Lighthouse\Support\Contracts\Directive;
+use Nuwave\Lighthouse\Support\Utils;
 use ReflectionClass;
 use ReflectionNamedType;
 
@@ -19,9 +20,7 @@ class ArgPartitioner
     /**
      * Partition the arguments into nested and regular.
      *
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet  $argumentSet
-     * @param  mixed  $root
-     * @return \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet[]
+     * @return array<\Nuwave\Lighthouse\Execution\Arguments\ArgumentSet>
      */
     public static function nestedArgResolvers(ArgumentSet $argumentSet, $root): array
     {
@@ -36,7 +35,7 @@ class ArgPartitioner
         return static::partition(
             $argumentSet,
             static function (string $name, Argument $argument): bool {
-                return isset($argument->resolver);
+                return $argument->resolver !== null;
             }
         );
     }
@@ -64,10 +63,7 @@ class ArgPartitioner
      *   ]
      * ]
      *
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet  $argumentSet
-     * @param  \Illuminate\Database\Eloquent\Model  $model
-     * @param  string  $relationClass
-     * @return \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet[]
+     * @return array{0: \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet, 1: \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet}
      */
     public static function relationMethods(
         ArgumentSet $argumentSet,
@@ -76,27 +72,32 @@ class ArgPartitioner
     ): array {
         $modelReflection = new ReflectionClass($model);
 
-        return static::partition(
+        [$relations, $remaining] = static::partition(
             $argumentSet,
             static function (string $name) use ($modelReflection, $relationClass): bool {
                 return static::methodReturnsRelation($modelReflection, $name, $relationClass);
             }
         );
+
+        $nonNullRelations = new ArgumentSet();
+        $nonNullRelations->arguments = array_filter(
+            $relations->arguments,
+            static function (Argument $argument): bool {
+                return null !== $argument->value;
+            }
+        );
+
+        return [$nonNullRelations, $remaining];
     }
 
     /**
      * Attach a nested argument resolver to an argument.
-     *
-     * @param  string  $name
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\Argument  $argument
-     * @param  \ReflectionClass|null  $model
-     * @return void
      */
     protected static function attachNestedArgResolver(string $name, Argument &$argument, ?ReflectionClass $model): void
     {
-        $resolverDirective = $argument->directives->first(function (Directive $directive): bool {
-            return $directive instanceof ArgResolver;
-        });
+        $resolverDirective = $argument->directives->first(
+            Utils::instanceofMatcher(ArgResolver::class)
+        );
 
         if ($resolverDirective) {
             $argument->resolver = $resolverDirective;
@@ -105,7 +106,7 @@ class ArgPartitioner
         }
 
         if (isset($model)) {
-            $isRelation = static function (string $relationClass) use ($model, $name) {
+            $isRelation = static function (string $relationClass) use ($model, $name): bool {
                 return static::methodReturnsRelation($model, $name, $relationClass);
             };
 
@@ -150,11 +151,9 @@ class ArgPartitioner
      * - the first one contains all arguments for which the predicate matched
      * - the second one contains all arguments for which the predicate did not match
      *
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet  $argumentSet
-     * @param  \Closure  $predicate
-     * @return \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet[]
+     * @return  array{0: \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet, 1: \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet}
      */
-    public static function partition(ArgumentSet $argumentSet, \Closure $predicate)
+    public static function partition(ArgumentSet $argumentSet, \Closure $predicate): array
     {
         $matched = new ArgumentSet();
         $notMatched = new ArgumentSet();
@@ -175,11 +174,6 @@ class ArgPartitioner
 
     /**
      * Does a method on the model return a relation of the given class?
-     *
-     * @param  \ReflectionClass  $modelReflection
-     * @param  string  $name
-     * @param  string  $relationClass
-     * @return bool
      */
     public static function methodReturnsRelation(
         ReflectionClass $modelReflection,
@@ -191,12 +185,18 @@ class ArgPartitioner
         }
 
         $relationMethodCandidate = $modelReflection->getMethod($name);
-        if (! $returnType = $relationMethodCandidate->getReturnType()) {
+
+        $returnType = $relationMethodCandidate->getReturnType();
+        if ($returnType === null) {
             return false;
         }
 
         if (! $returnType instanceof ReflectionNamedType) {
             return false;
+        }
+
+        if (! class_exists($returnType->getName())) {
+            throw new DefinitionException('Class '.$returnType->getName().' does not exist, did you forget to import the Eloquent relation class?');
         }
 
         return is_a($returnType->getName(), $relationClass, true);

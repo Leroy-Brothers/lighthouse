@@ -7,10 +7,9 @@ interface CanStreamResponse
     /**
      * Stream graphql response.
      *
-     * @param  array  $data
-     * @param  array  $paths
-     * @param  bool  $final
-     * @return mixed
+     * @param  array<string, mixed>  $data
+     * @param  array<int, string>  $paths
+     * @return void  This function is expected to emit a stream as a side effect
      */
-    public function stream(array $data, array $paths, bool $final);
+    public function stream(array $data, array $paths, bool $isFinalChunk);
 }

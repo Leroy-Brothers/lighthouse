@@ -4,11 +4,11 @@ There are times when you'll need to filter out specific events based on the argu
 
 ```graphql
 subscription onPostUpdated($post_id: ID!) {
-    postUpdated(post_id: $post_id) {
-        id
-        title
-        content
-    }
+  postUpdated(post_id: $post_id) {
+    id
+    title
+    content
+  }
 }
 ```
 
@@ -17,7 +17,7 @@ To ensure only clients who are subscribed to a certain `post_id` receive an upda
 ```php
 namespace App\GraphQL\Subscriptions;
 
-use Nuwave\Lighthouse\Schema\Subscriptions\Subscriber;
+use Nuwave\Lighthouse\Subscriptions\Subscriber;
 use Nuwave\Lighthouse\Schema\Types\GraphQLSubscription;
 
 class PostUpdatedSubscription extends GraphQLSubscription

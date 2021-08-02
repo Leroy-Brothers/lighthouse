@@ -100,15 +100,16 @@ class ForceDeleteDirectiveTest extends DBTestCase
         $this->assertCount(0, Task::withTrashed()->get());
     }
 
-    public function testCanDirectiveIncludesTrashedModelsWhenUsingForceDelete(): void
+    public function testDirectiveIncludesTrashedModelsWhenUsingForceDelete(): void
     {
-        $user = User::create([
-            'name' => UserPolicy::ADMIN,
-        ]);
+        $user = new User();
+        $user->name = UserPolicy::ADMIN;
+        $user->save();
+        $this->be($user);
+
         $task = factory(Task::class)->make();
         $user->tasks()->save($task);
         $task->delete();
-        $this->be($user);
 
         $this->schema .= /** @lang GraphQL */ '
         type Task {
@@ -134,15 +135,16 @@ class ForceDeleteDirectiveTest extends DBTestCase
         $this->assertCount(0, Task::withTrashed()->get());
     }
 
-    public function testCanDirectiveUsesExplicitTrashedArgument(): void
+    public function testDirectiveUsesExplicitTrashedArgument(): void
     {
-        $user = User::create([
-            'name' => UserPolicy::ADMIN,
-        ]);
+        $user = new User();
+        $user->name = UserPolicy::ADMIN;
+        $user->save();
+        $this->be($user);
+
         $task = factory(Task::class)->make();
         $user->tasks()->save($task);
         $task->delete();
-        $this->be($user);
 
         $this->schema .= /** @lang GraphQL */ '
         type Task {

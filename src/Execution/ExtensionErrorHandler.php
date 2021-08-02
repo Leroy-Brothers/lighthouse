@@ -6,32 +6,32 @@ use Closure;
 use GraphQL\Error\Error;
 use Nuwave\Lighthouse\Exceptions\RendersErrorsExtensions;
 
+/**
+ * Handle Exceptions that implement Nuwave\Lighthouse\Exceptions\RendersErrorsExtensions
+ * and add extra content from them to the 'extensions' key of the Error that is rendered
+ * to the User.
+ */
 class ExtensionErrorHandler implements ErrorHandler
 {
-    /**
-     * Handle Exceptions that implement Nuwave\Lighthouse\Exceptions\RendersErrorsExtensions
-     * and add extra content from them to the 'extensions' key of the Error that is rendered
-     * to the User.
-     *
-     * @param  \GraphQL\Error\Error  $error
-     * @param  \Closure  $next
-     * @return array
-     */
-    public static function handle(Error $error, Closure $next): array
+    public function __invoke(?Error $error, Closure $next): ?array
     {
-        $underlyingException = $error->getPrevious();
+        if ($error === null) {
+            return $next(null);
+        }
 
+        $underlyingException = $error->getPrevious();
         if ($underlyingException instanceof RendersErrorsExtensions) {
             // Reconstruct the error, passing in the extensions of the underlying exception
-            $error = new Error(
-                $error->message,
-                $error->nodes,
+            return $next(new Error(
+                $error->getMessage(),
+                // @phpstan-ignore-next-line graphql-php and phpstan disagree with themselves
+                $error->getNodes(),
                 $error->getSource(),
                 $error->getPositions(),
                 $error->getPath(),
                 $underlyingException,
                 $underlyingException->extensionsContent()
-            );
+            ));
         }
 
         return $next($error);

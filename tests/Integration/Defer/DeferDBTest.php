@@ -12,7 +12,7 @@ use Tests\Utils\Models\User;
 
 class DeferDBTest extends DBTestCase
 {
-    protected function getPackageProviders($app)
+    protected function getPackageProviders($app): array
     {
         return array_merge(
             parent::getPackageProviders($app),
@@ -20,7 +20,7 @@ class DeferDBTest extends DBTestCase
         );
     }
 
-    public function testCanDeferBelongsToFields(): void
+    public function testDeferBelongsToFields(): void
     {
         $company = factory(Company::class)->create();
         $user = factory(User::class)->create([
@@ -72,7 +72,7 @@ class DeferDBTest extends DBTestCase
         $this->assertSame($company->name, Arr::get($deferredCompany['user.company']['data'], 'name'));
     }
 
-    public function testCanDeferNestedRelationshipFields(): void
+    public function testDeferNestedRelationshipFields(): void
     {
         $company = factory(Company::class)->create();
         $users = factory(User::class, 5)->create([
@@ -143,7 +143,7 @@ class DeferDBTest extends DBTestCase
         );
     }
 
-    public function testCanDeferNestedListFields(): void
+    public function testDeferNestedListFields(): void
     {
         /** @var \Illuminate\Database\Eloquent\Collection<\Tests\Utils\Models\Company> $companies */
         $companies = factory(Company::class, 2)
@@ -195,8 +195,15 @@ class DeferDBTest extends DBTestCase
         $this->assertCount(3, $chunks);
 
         $deferredCompanies = $chunks[0];
-        $this->assertSame($companies[0]->name, Arr::get($deferredCompanies, 'data.companies.0.name'));
-        $this->assertSame($companies[1]->name, Arr::get($deferredCompanies, 'data.companies.1.name'));
+
+        /** @var \Tests\Utils\Models\Company $company0 */
+        $company0 = $companies[0];
+        $this->assertSame($company0->name, Arr::get($deferredCompanies, 'data.companies.0.name'));
+
+        /** @var \Tests\Utils\Models\Company $company1 */
+        $company1 = $companies[1];
+        $this->assertSame($company1->name, Arr::get($deferredCompanies, 'data.companies.1.name'));
+
         $this->assertNull(Arr::get($deferredCompanies, 'data.companies.0.users'));
         $this->assertNull(Arr::get($deferredCompanies, 'data.companies.1.users'));
 
@@ -226,11 +233,9 @@ class DeferDBTest extends DBTestCase
             $item = $item['data'];
             $this->assertArrayHasKey('name', $item);
 
-            $this->assertTrue(
-                in_array(
-                    $item['name'],
-                    $companies->pluck('name')->all()
-                )
+            $this->assertContains(
+                $item['name'],
+                $companies->pluck('name')->all()
             );
         });
     }

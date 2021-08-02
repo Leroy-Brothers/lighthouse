@@ -13,78 +13,55 @@ class LogBroadcaster implements Broadcaster
     /**
      * The user-defined configuration options.
      *
-     * @var mixed[]
+     * @var array<string, mixed>
      */
     protected $config = [];
 
     /**
      * A map from channel names to data.
      *
-     * @var mixed
+     * @var array<string, mixed>
      */
     protected $broadcasts = [];
 
     /**
-     * @param  array  $config
-     * @return void
+     * @param  array<string, mixed>  $config
      */
     public function __construct(array $config = [])
     {
         $this->config = $config;
     }
 
-    /**
-     * Authorize subscription request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function authorized(Request $request): JsonResponse
     {
-        return response()->json(['message' => 'ok'], 200);
+        return new JsonResponse([
+            'message' => 'ok',
+        ], 200);
     }
 
-    /**
-     * Handle unauthorized subscription request.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function unauthorized(Request $request): JsonResponse
     {
-        return response()->json(['error' => 'unauthorized'], 403);
+        return new JsonResponse([
+            'error' => 'unauthorized',
+        ], 403);
     }
 
-    /**
-     * Handle subscription web hook.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Illuminate\Http\JsonResponse
-     */
     public function hook(Request $request): JsonResponse
     {
-        return response()->json(['message' => 'okay']);
+        return new JsonResponse([
+            'message' => 'okay',
+        ], 200);
     }
 
-    /**
-     * Send data to subscriber.
-     *
-     * @param  \Nuwave\Lighthouse\Subscriptions\Subscriber  $subscriber
-     * @param  array  $data
-     * @return void
-     */
-    public function broadcast(Subscriber $subscriber, array $data): void
+    public function broadcast(Subscriber $subscriber, $data): void
     {
         $this->broadcasts[$subscriber->channel] = $data;
     }
 
     /**
-     * Get the data that is being broadcast.
-     *
-     * @param  string|null  $key
-     * @return array|null
+     * @return mixed The data that is being broadcast
      */
-    public function broadcasts(?string $key = null): ?array
+    public function broadcasts(?string $key = null)
     {
         return Arr::get($this->broadcasts, $key);
     }
@@ -92,7 +69,7 @@ class LogBroadcaster implements Broadcaster
     /**
      * Get configuration options.
      *
-     * @return mixed[]
+     * @return array<string, mixed>
      */
     public function config(): array
     {

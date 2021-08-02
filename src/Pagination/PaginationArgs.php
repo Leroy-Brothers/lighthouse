@@ -3,6 +3,7 @@
 namespace Nuwave\Lighthouse\Pagination;
 
 use GraphQL\Error\Error;
+use Illuminate\Contracts\Pagination\Paginator;
 use Illuminate\Support\Arr;
 use Laravel\Scout\Builder as ScoutBuilder;
 
@@ -19,18 +20,22 @@ class PaginationArgs
     public $first;
 
     /**
+     * @var \Nuwave\Lighthouse\Pagination\PaginationType
+     */
+    public $type;
+
+    /**
      * Create a new instance from user given args.
      *
-     * @param  mixed[]  $args
-     * @param  \Nuwave\Lighthouse\Pagination\PaginationType|null  $paginationType
-     * @param  int|null  $paginateMaxCount
-     * @return static
+     * @param  array<string, mixed>  $args
      *
      * @throws \GraphQL\Error\Error
      */
-    public static function extractArgs(array $args, ?PaginationType $paginationType, ?int $paginateMaxCount): self
+    public static function extractArgs(array $args, PaginationType $paginationType, ?int $paginateMaxCount): self
     {
         $instance = new static();
+
+        $instance->type = $paginationType;
 
         if ($paginationType->isConnection()) {
             $instance->first = $args['first'];
@@ -39,7 +44,8 @@ class PaginationArgs
                 Cursor::decode($args)
             );
         } else {
-            $instance->first = $args[config('lighthouse.pagination_amount_argument')];
+            // Handles cases "paginate" and "simple", which both take the same args.
+            $instance->first = $args['first'];
             $instance->page = Arr::get($args, 'page', 1);
         }
 
@@ -74,11 +80,6 @@ class PaginationArgs
 
     /**
      * Calculate the current page to inform the user about the pagination state.
-     *
-     * @param  int  $first
-     * @param  int  $after
-     * @param  int  $defaultPage
-     * @return int
      */
     protected static function calculateCurrentPage(int $first, int $after, int $defaultPage = 1): int
     {
@@ -90,15 +91,19 @@ class PaginationArgs
     /**
      * Apply the args to a builder, constructing a paginator.
      *
-     * @param \Illuminate\Database\Query\Builder $builder
-     * @return \Illuminate\Contracts\Pagination\LengthAwarePaginator
+     * @param  \Illuminate\Database\Query\Builder|\Laravel\Scout\Builder|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Relations\Relation  $builder
      */
-    public function applyToBuilder($builder)
+    public function applyToBuilder(object $builder): Paginator
     {
+        $methodName = $this->type->isSimple()
+            ? 'simplePaginate'
+            : 'paginate';
+
         if ($builder instanceof ScoutBuilder) {
-            return $builder->paginate($this->first, 'page', $this->page);
+            return $builder->{$methodName}($this->first, 'page', $this->page);
         }
 
-        return $builder->paginate($this->first, ['*'], 'page', $this->page);
+        // @phpstan-ignore-next-line Relation&Builder mixin not recognized
+        return $builder->{$methodName}($this->first, ['*'], 'page', $this->page);
     }
 }

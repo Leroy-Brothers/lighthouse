@@ -7,9 +7,9 @@ use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Support\Str;
 use Nuwave\Lighthouse\Exceptions\DefinitionException;
 use Nuwave\Lighthouse\Schema\AST\ASTHelper;
-use Nuwave\Lighthouse\Schema\Directives\SubscriptionDirective;
 use Nuwave\Lighthouse\Schema\Types\GraphQLSubscription;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
+use Nuwave\Lighthouse\Subscriptions\Directives\SubscriptionDirective;
 use Nuwave\Lighthouse\Subscriptions\Exceptions\UnauthorizedSubscriber;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 use Nuwave\Lighthouse\Support\Contracts\ProvidesSubscriptionResolver;
@@ -22,12 +22,6 @@ class SubscriptionResolverProvider implements ProvidesSubscriptionResolver
      */
     protected $subscriptionRegistry;
 
-    /**
-     * ResolverProvider constructor.
-     *
-     * @param  \Nuwave\Lighthouse\Subscriptions\SubscriptionRegistry  $subscriptionRegistry
-     * @return void
-     */
     public function __construct(SubscriptionRegistry $subscriptionRegistry)
     {
         $this->subscriptionRegistry = $subscriptionRegistry;
@@ -36,16 +30,16 @@ class SubscriptionResolverProvider implements ProvidesSubscriptionResolver
     /**
      * Provide a resolver for a subscription field in case no resolver directive is defined.
      *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $fieldValue
-     * @return \Closure
-     *
      * @throws \Nuwave\Lighthouse\Exceptions\DefinitionException
+     *
+     * @return \Closure(mixed, array<string, mixed>, \Nuwave\Lighthouse\Support\Contracts\GraphQLContext, \GraphQL\Type\Definition\ResolveInfo): mixed
      */
     public function provideSubscriptionResolver(FieldValue $fieldValue): Closure
     {
         $fieldName = $fieldValue->getFieldName();
 
-        if ($directive = ASTHelper::directiveDefinition($fieldValue->getField(), SubscriptionDirective::NAME)) {
+        $directive = ASTHelper::directiveDefinition($fieldValue->getField(), SubscriptionDirective::NAME);
+        if ($directive !== null) {
             $className = ASTHelper::directiveArgValue($directive, 'class');
         } else {
             $className = Str::studly($fieldName);
@@ -96,6 +90,8 @@ class SubscriptionResolverProvider implements ProvidesSubscriptionResolver
                 $subscriber,
                 $subscription->encodeTopic($subscriber, $fieldName)
             );
+
+            return null;
         };
     }
 }

@@ -3,10 +3,12 @@
 namespace Nuwave\Lighthouse\Schema;
 
 use GraphQL\GraphQL;
+use GraphQL\Type\Definition\Type;
 use GraphQL\Type\Schema;
 use GraphQL\Type\SchemaConfig;
-use Nuwave\Lighthouse\ClientDirectives\ClientDirectiveFactory;
+use Nuwave\Lighthouse\Schema\AST\ASTBuilder;
 use Nuwave\Lighthouse\Schema\AST\DocumentAST;
+use Nuwave\Lighthouse\Schema\Factories\DirectiveFactory;
 
 class SchemaBuilder
 {
@@ -16,76 +18,90 @@ class SchemaBuilder
     protected $typeRegistry;
 
     /**
-     * @var \Nuwave\Lighthouse\ClientDirectives\ClientDirectiveFactory
+     * @var \Nuwave\Lighthouse\Schema\AST\ASTBuilder
      */
-    protected $clientDirectiveFactory;
+    protected $astBuilder;
 
     /**
-     * @param  \Nuwave\Lighthouse\Schema\TypeRegistry  $typeRegistry
-     * @param  \Nuwave\Lighthouse\ClientDirectives\ClientDirectiveFactory  $clientDirectiveFactory
-     * @return void
+     * @var \GraphQL\Type\Schema
      */
-    public function __construct(
-        TypeRegistry $typeRegistry,
-        ClientDirectiveFactory $clientDirectiveFactory
-    ) {
+    protected $schema;
+
+    public function __construct(TypeRegistry $typeRegistry, ASTBuilder $astBuilder)
+    {
         $this->typeRegistry = $typeRegistry;
-        $this->clientDirectiveFactory = $clientDirectiveFactory;
+        $this->astBuilder = $astBuilder;
+    }
+
+    public function schema(): Schema
+    {
+        if (! isset($this->schema)) {
+            $this->schema = $this->build(
+                $this->astBuilder->documentAST()
+            );
+        }
+
+        return $this->schema;
     }
 
     /**
-     * Build an executable schema from AST.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $documentAST
-     * @return \GraphQL\Type\Schema
+     * Build an executable schema from an AST.
      */
-    public function build(DocumentAST $documentAST): Schema
+    protected function build(DocumentAST $documentAST): Schema
     {
         $config = SchemaConfig::create();
 
         $this->typeRegistry->setDocumentAST($documentAST);
 
         // Always set Query since it is required
-        $config->setQuery(
-            $this->typeRegistry->get('Query')
-        );
+        /** @var \GraphQL\Type\Definition\ObjectType $query */
+        $query = $this->typeRegistry->get(RootType::QUERY);
+        $config->setQuery($query);
 
-        // Those are optional so only add them if they are present in the schema
-        if (isset($documentAST->types['Mutation'])) {
-            $config->setMutation(
-                $this->typeRegistry->get('Mutation')
-            );
+        // Mutation and Subscription are optional, so only add them
+        // if they are present in the schema
+        if (isset($documentAST->types[RootType::MUTATION])) {
+            /** @var \GraphQL\Type\Definition\ObjectType $mutation */
+            $mutation = $this->typeRegistry->get(RootType::MUTATION);
+            $config->setMutation($mutation);
         }
-        if (isset($documentAST->types['Subscription'])) {
-            /** @var \GraphQL\Type\Definition\ObjectType $subscription */
-            $subscription = $this->typeRegistry->get('Subscription');
-            // Eager-load the subscription fields to ensure they are registered
-            $subscription->getFields();
 
-            $config->setSubscription(
-                $subscription
-            );
+        if (isset($documentAST->types[RootType::SUBSCRIPTION])) {
+            /** @var \GraphQL\Type\Definition\ObjectType $subscription */
+            $subscription = $this->typeRegistry->get(RootType::SUBSCRIPTION);
+            $config->setSubscription($subscription);
         }
 
         // Use lazy type loading to prevent unnecessary work
         $config->setTypeLoader(
-            [$this->typeRegistry, 'get']
+            function (string $name): Type {
+                return $this->typeRegistry->get($name);
+            }
         );
 
         // This is just used for introspection, it is required
         // to be able to retrieve all the types in the schema
         $config->setTypes(
-            [$this->typeRegistry, 'possibleTypes']
+            /**
+             * @return array<string, \GraphQL\Type\Definition\Type>
+             */
+            function (): array {
+                return $this->typeRegistry->possibleTypes();
+            }
         );
 
-        // There is no way to resolve client directives lazily,
-        // so we convert them eagerly
-        $clientDirectives = [];
+        // There is no way to resolve directives lazily, so we convert them eagerly
+        $directiveFactory = new DirectiveFactory(
+            new ExecutableTypeNodeConverter($this->typeRegistry)
+        );
+
+        $directives = [];
         foreach ($documentAST->directives as $directiveDefinition) {
-            $clientDirectives [] = $this->clientDirectiveFactory->handle($directiveDefinition);
+            $directives [] = $directiveFactory->handle($directiveDefinition);
         }
+
         $config->setDirectives(
-            array_merge(GraphQL::getStandardDirectives(), $clientDirectives)
+            array_merge(GraphQL::getStandardDirectives(), $directives)
         );
 
         return new Schema($config);

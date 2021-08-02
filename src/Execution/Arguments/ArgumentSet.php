@@ -5,8 +5,9 @@ namespace Nuwave\Lighthouse\Execution\Arguments;
 use Closure;
 use Nuwave\Lighthouse\Schema\Directives\RenameDirective;
 use Nuwave\Lighthouse\Schema\Directives\SpreadDirective;
+use Nuwave\Lighthouse\Scout\ScoutEnhancer;
 use Nuwave\Lighthouse\Support\Contracts\ArgBuilderDirective;
-use Nuwave\Lighthouse\Support\Contracts\Directive;
+use Nuwave\Lighthouse\Support\Contracts\FieldBuilderDirective;
 use Nuwave\Lighthouse\Support\Utils;
 
 class ArgumentSet
@@ -14,15 +15,23 @@ class ArgumentSet
     /**
      * An associative array from argument names to arguments.
      *
-     * @var \Nuwave\Lighthouse\Execution\Arguments\Argument[]
+     * @var array<string, \Nuwave\Lighthouse\Execution\Arguments\Argument>
      */
     public $arguments = [];
 
     /**
+     * An associative array of arguments that were not given.
+     *
+     * @var array<string, \Nuwave\Lighthouse\Execution\Arguments\Argument>
+     */
+    public $undefined = [];
+
+    /**
      * A list of directives.
      *
-     * This may be coming from the field the arguments are a part of
-     * or the parent argument when in a tree of nested inputs.
+     * This may be coming from
+     * - the field the arguments are a part of
+     * - the parent argument when in a tree of nested inputs.
      *
      * @var \Illuminate\Support\Collection<\Nuwave\Lighthouse\Support\Contracts\Directive>
      */
@@ -31,7 +40,7 @@ class ArgumentSet
     /**
      * Get a plain array representation of this ArgumentSet.
      *
-     * @return array
+     * @return array<string, mixed>
      */
     public function toArray(): array
     {
@@ -46,13 +55,9 @@ class ArgumentSet
 
     /**
      * Check if the ArgumentSet has a non-null value with the given key.
-     *
-     * @param  string  $key
-     * @return bool
      */
     public function has(string $key): bool
     {
-        /** @var \Nuwave\Lighthouse\Execution\Arguments\Argument|null $argument */
         $argument = $this->arguments[$key] ?? null;
 
         if ($argument === null) {
@@ -65,7 +70,7 @@ class ArgumentSet
     /**
      * Apply the @spread directive and return a new, modified instance.
      *
-     * @return self
+     * @noRector \Rector\DeadCode\Rector\ClassMethod\RemoveDeadRecursiveClassMethodRector
      */
     public function spread(): self
     {
@@ -82,9 +87,7 @@ class ArgumentSet
                 $value = $value->spread();
 
                 if ($argument->directives->contains(
-                    function (Directive $directive): bool {
-                        return $directive instanceof SpreadDirective;
-                    }
+                    Utils::instanceofMatcher(SpreadDirective::class)
                 )) {
                     $argumentSet->arguments += $value->arguments;
                     continue;
@@ -100,7 +103,7 @@ class ArgumentSet
     /**
      * Apply the @rename directive and return a new, modified instance.
      *
-     * @return self
+     * @noRector \Rector\DeadCode\Rector\ClassMethod\RemoveDeadRecursiveClassMethodRector
      */
     public function rename(): self
     {
@@ -127,7 +130,7 @@ class ArgumentSet
                 return $directive instanceof RenameDirective;
             });
 
-            if ($renameDirective) {
+            if ($renameDirective !== null) {
                 $argumentSet->arguments[$renameDirective->attributeArgValue()] = $argument;
             } else {
                 $argumentSet->arguments[$name] = $argument;
@@ -140,18 +143,23 @@ class ArgumentSet
     /**
      * Apply ArgBuilderDirectives and scopes to the builder.
      *
-     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Relations\Relation  $builder
-     * @param  string[]  $scopes
-     * @param  \Closure  $directiveFilter
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $builder
+     * @param  array<string>  $scopes
      *
-     * @return \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Relations\Relation
+     * @return \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder|\Laravel\Scout\Builder
      */
-    public function enhanceBuilder($builder, array $scopes, Closure $directiveFilter = null)
+    public function enhanceBuilder(object $builder, array $scopes, Closure $directiveFilter = null): object
     {
+        $scoutEnhancer = new ScoutEnhancer($this, $builder);
+        if ($scoutEnhancer->hasSearchArguments()) {
+            return $scoutEnhancer->enhanceBuilder();
+        }
+
         self::applyArgBuilderDirectives($this, $builder, $directiveFilter);
+        self::applyFieldBuilderDirectives($this, $builder);
 
         foreach ($scopes as $scope) {
-            call_user_func([$builder, $scope], $this->toArray());
+            $builder->{$scope}($this->toArray());
         }
 
         return $builder;
@@ -163,11 +171,10 @@ class ArgumentSet
      * TODO get rid of the reference passing in here. The issue is that @search makes a new builder instance,
      * but we must special case that in some way anyhow, as only eq filters can be added on top of search.
      *
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet  $argumentSet
-     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder|\Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Relations\Relation  $builder
-     * @param  \Closure|null  $directiveFilter
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $builder
+     * @param  (\Closure(\Nuwave\Lighthouse\Support\Contracts\ArgBuilderDirective): bool)|null  $directiveFilter
      */
-    protected static function applyArgBuilderDirectives(self $argumentSet, &$builder, Closure $directiveFilter = null)
+    protected static function applyArgBuilderDirectives(self $argumentSet, object &$builder, Closure $directiveFilter = null): void
     {
         foreach ($argumentSet->arguments as $argument) {
             $value = $argument->toPlain();
@@ -180,20 +187,18 @@ class ArgumentSet
 
             $filteredDirectives = $argument
                 ->directives
-                ->filter(function (Directive $directive): bool {
-                    return $directive instanceof ArgBuilderDirective;
-                });
+                ->filter(Utils::instanceofMatcher(ArgBuilderDirective::class));
 
-            if (! empty($directiveFilter)) {
+            if (null !== $directiveFilter) {
                 $filteredDirectives = $filteredDirectives->filter($directiveFilter);
             }
 
-            $filteredDirectives->each(function (ArgBuilderDirective $argBuilderDirective) use (&$builder, $value) {
+            $filteredDirectives->each(static function (ArgBuilderDirective $argBuilderDirective) use (&$builder, $value): void {
                 $builder = $argBuilderDirective->handleBuilder($builder, $value);
             });
 
             Utils::applyEach(
-                function ($value) use (&$builder, $directiveFilter) {
+                static function ($value) use (&$builder, $directiveFilter) {
                     if ($value instanceof self) {
                         self::applyArgBuilderDirectives($value, $builder, $directiveFilter);
                     }
@@ -204,14 +209,28 @@ class ArgumentSet
     }
 
     /**
+     * Apply the FieldBuilderDirectives onto the builder.
+     *
+     * TODO get rid of the reference passing in here. The issue is that @search makes a new builder instance,
+     * but we must special case that in some way anyhow, as only eq filters can be added on top of search.
+     *
+     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $builder
+     */
+    protected static function applyFieldBuilderDirectives(self $argumentSet, object &$builder): void
+    {
+        $argumentSet->directives
+            ->filter(Utils::instanceofMatcher(FieldBuilderDirective::class))
+            ->each(static function (FieldBuilderDirective $fieldBuilderDirective) use (&$builder): void {
+                $builder = $fieldBuilderDirective->handleFieldBuilder($builder);
+            });
+    }
+
+    /**
      * Add a value at the dot-separated path.
      *
-     * Works just like the Laravel Arr::add() function.
-     * @see \Illuminate\Support\Arr
+     * Works just like @see \Illuminate\Support\Arr::add().
      *
-     * @param  string  $path
-     * @param  mixed  $value
-     * @return $this
+     * @param  mixed  $value Any value to inject.
      */
     public function addValue(string $path, $value): self
     {
@@ -238,5 +257,15 @@ class ArgumentSet
         $argumentSet->arguments[array_shift($keys)] = $argument;
 
         return $this;
+    }
+
+    /**
+     * The contained arguments, including all that were not passed.
+     *
+     * @return array<string, \Nuwave\Lighthouse\Execution\Arguments\Argument>
+     */
+    public function argumentsWithUndefined(): array
+    {
+        return array_merge($this->arguments, $this->undefined);
     }
 }

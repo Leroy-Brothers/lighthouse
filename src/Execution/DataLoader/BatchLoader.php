@@ -4,6 +4,10 @@ namespace Nuwave\Lighthouse\Execution\DataLoader;
 
 use GraphQL\Deferred;
 
+/**
+ * @deprecated implement your own batch loader instead.
+ * @see \Nuwave\Lighthouse\Execution\BatchLoader\BatchLoaderRegistry to resolve instances.
+ */
 abstract class BatchLoader
 {
     /**
@@ -40,7 +44,6 @@ abstract class BatchLoader
      * @param  string  $loaderClass  The class name of the concrete BatchLoader to instantiate
      * @param  array<int|string>  $pathToField  Path to the GraphQL field from the root, is used as a key for BatchLoader instances
      * @param  array<mixed>  $constructorArgs  Those arguments are passed to the constructor of the new BatchLoader instance
-     * @return static
      *
      * @throws \Exception
      */
@@ -60,7 +63,6 @@ abstract class BatchLoader
      * Generate a unique key for the instance, using the path in the query.
      *
      * @param  array<int|string>  $path
-     * @return string
      */
     public static function instanceKey(array $path): string
     {
@@ -83,8 +85,6 @@ abstract class BatchLoader
      *
      * This is called after Lighthouse has resolved a query, so multiple
      * queries can be handled in a single request/session.
-     *
-     * @return void
      */
     public static function forgetInstances(): void
     {
@@ -94,13 +94,10 @@ abstract class BatchLoader
     /**
      * Schedule a result to be loaded.
      *
-     * @param  mixed  $key
      * @param  array<mixed>  $metaInfo
-     * @return \GraphQL\Deferred
      */
-    public function load($key, array $metaInfo = []): Deferred
+    public function load(string $key, array $metaInfo = []): Deferred
     {
-        $key = $this->buildKey($key);
         $this->keys[$key] = $metaInfo;
 
         return new Deferred(function () use ($key) {
@@ -118,7 +115,7 @@ abstract class BatchLoader
      *
      * @param  array<mixed>  $keys
      * @param  array<mixed>  $metaInfo
-     * @return \GraphQL\Deferred[]
+     * @return array<\GraphQL\Deferred>
      */
     public function loadMany(array $keys, array $metaInfo = []): array
     {
@@ -138,19 +135,4 @@ abstract class BatchLoader
      * @return array<mixed, mixed>
      */
     abstract public function resolve(): array;
-
-    /**
-     * Build a key out of one or more given keys, supporting composite keys.
-     *
-     * E.g.: $primaryKey = ['key1', 'key2'];.
-     *
-     * @param  mixed  $key
-     * @return string
-     */
-    protected function buildKey($key): string
-    {
-        return is_array($key)
-            ? implode('___', $key)
-            : $key;
-    }
 }

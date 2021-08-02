@@ -12,22 +12,11 @@ class LumenMiddlewareAdapter implements MiddlewareAdapter
      */
     protected $app;
 
-    /**
-     * Create a middleware adapter for Lumen applications.
-     *
-     * @param  \Laravel\Lumen\Application  $app
-     * @return void
-     */
-    public function __construct(Application $app)
+    public function __construct()
     {
-        $this->app = $app;
+        $this->app = Application::getInstance();
     }
 
-    /**
-     * Get all of the defined middleware short-hand names.
-     *
-     * @return string[]
-     */
     public function getMiddleware(): array
     {
         // TODO remove once Lumen gains public access to the middleware/routeMiddleware
@@ -37,11 +26,6 @@ class LumenMiddlewareAdapter implements MiddlewareAdapter
         return array_merge($globalMiddleware, $routeMiddleware);
     }
 
-    /**
-     * Get all of the defined middleware groups.
-     *
-     * @return string[]
-     */
     public function getMiddlewareGroups(): array
     {
         // Lumen doesn't have middleware groups

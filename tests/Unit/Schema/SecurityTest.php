@@ -9,15 +9,15 @@ use Tests\TestCase;
 
 class SecurityTest extends TestCase
 {
-    public function testCanSetMaxComplexityThroughConfig(): void
+    public function testSetMaxComplexityThroughConfig(): void
     {
         config(['lighthouse.security.max_query_complexity' => 1]);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type Query {
             user: User @first
         }
-        
+
         type User {
             name: String
         }
@@ -26,15 +26,15 @@ class SecurityTest extends TestCase
         $this->assertMaxQueryComplexityIs1();
     }
 
-    public function testCanSetMaxDepthThroughConfig(): void
+    public function testSetMaxDepthThroughConfig(): void
     {
         config(['lighthouse.security.max_query_depth' => 1]);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type Query {
             user: User @first
         }
-        
+
         type User {
             name: String
             user: User
@@ -44,7 +44,7 @@ class SecurityTest extends TestCase
         $this->assertMaxQueryDepthIs1();
     }
 
-    public function testCanDisableIntrospectionThroughConfig(): void
+    public function testDisableIntrospectionThroughConfig(): void
     {
         config(['lighthouse.security.disable_introspection' => true]);
 
@@ -53,7 +53,7 @@ class SecurityTest extends TestCase
 
     protected function assertMaxQueryComplexityIs1(): void
     {
-        $result = $this->graphQL('
+        $result = $this->graphQL(/** @lang GraphQL */ '
         {
             user {
                 name
@@ -63,13 +63,13 @@ class SecurityTest extends TestCase
 
         $this->assertSame(
             QueryComplexity::maxQueryComplexityErrorMessage(1, 2),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 
     protected function assertMaxQueryDepthIs1(): void
     {
-        $result = $this->graphQL('
+        $result = $this->graphQL(/** @lang GraphQL */ '
         {
             user {
                 user {
@@ -83,13 +83,13 @@ class SecurityTest extends TestCase
 
         $this->assertSame(
             QueryDepth::maxQueryDepthErrorMessage(1, 2),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 
     protected function assertIntrospectionIsDisabled(): void
     {
-        $result = $this->graphQL('
+        $result = $this->graphQL(/** @lang GraphQL */ '
         {
             __schema {
                 queryType {
@@ -101,7 +101,7 @@ class SecurityTest extends TestCase
 
         $this->assertSame(
             DisableIntrospection::introspectionDisabledMessage(),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 }

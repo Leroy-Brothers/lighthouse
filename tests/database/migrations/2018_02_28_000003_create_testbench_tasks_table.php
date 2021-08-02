@@ -6,26 +6,24 @@ use Illuminate\Support\Facades\Schema;
 
 class CreateTestbenchTasksTable extends Migration
 {
-    /**
-     * Run the migrations.
-     */
     public function up(): void
     {
         Schema::create('tasks', function (Blueprint $table): void {
             $table->increments('id');
-            $table->unsignedInteger('user_id')->nullable();
             $table->string('name')->unique();
-            // Properties which collide with native model method names
-            $table->string('guard')->nullable();
-            // -------------------------------------------------------
+            $table->string('guard')
+                ->nullable()
+                ->comment('The purpose of this property is to collide with a native model method name');
+            $table->unsignedInteger('difficulty')->nullable();
+
+            $table->unsignedInteger('user_id')->nullable();
+
+            $table->timestamp('completed_at')->nullable();
             $table->timestamps();
             $table->softDeletes();
         });
     }
 
-    /**
-     * Reverse the migrations.
-     */
     public function down(): void
     {
         Schema::drop('tasks');

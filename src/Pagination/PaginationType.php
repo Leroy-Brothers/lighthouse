@@ -9,32 +9,32 @@ use Nuwave\Lighthouse\Exceptions\DefinitionException;
  */
 class PaginationType
 {
-    const TYPE_PAGINATOR = 'paginator';
-    const PAGINATION_TYPE_CONNECTION = 'connection';
+    public const PAGINATOR = 'PAGINATOR';
+    public const SIMPLE = 'SIMPLE';
+    public const CONNECTION = 'CONNECTION';
 
     /**
-     * @var string PAGINATION_TYPE_PAGINATOR|PAGINATION_TYPE_CONNECTION
+     * @var string One of the constant values in this class
      */
     protected $type;
 
     /**
-     * PaginationType constructor.
-     *
-     * @param  string  $paginationType
-     * @return void
-     *
      * @throws \Nuwave\Lighthouse\Exceptions\DefinitionException
      */
     public function __construct(string $paginationType)
     {
-        switch ($paginationType) {
+        // TODO remove lowercase and alternate options in v6
+        switch (strtolower($paginationType)) {
             case 'default':
             case 'paginator':
-                $this->type = self::TYPE_PAGINATOR;
+                $this->type = self::PAGINATOR;
                 break;
             case 'connection':
             case 'relay':
-                $this->type = self::PAGINATION_TYPE_CONNECTION;
+                $this->type = self::CONNECTION;
+                break;
+            case 'simple':
+                $this->type = self::SIMPLE;
                 break;
             default:
                 throw new DefinitionException(
@@ -45,11 +45,16 @@ class PaginationType
 
     public function isPaginator(): bool
     {
-        return $this->type === self::TYPE_PAGINATOR;
+        return $this->type === self::PAGINATOR;
     }
 
     public function isConnection(): bool
     {
-        return $this->type === self::PAGINATION_TYPE_CONNECTION;
+        return $this->type === self::CONNECTION;
+    }
+
+    public function isSimple(): bool
+    {
+        return $this->type === self::SIMPLE;
     }
 }

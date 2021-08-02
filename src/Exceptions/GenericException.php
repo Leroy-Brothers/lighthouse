@@ -6,32 +6,18 @@ use GraphQL\Error\Error;
 
 class GenericException extends Error
 {
-    /**
-     * The category.
-     *
-     * @var string
-     */
     protected $category = 'generic';
 
     /**
-     * Set the contents that will be rendered under the "extensions" key of the error response.
-     *
-     * @param  mixed  $extensions
-     * @return $this
+     * @param  array<string, mixed>  $extensions
      */
-    public function setExtensions($extensions): self
+    public function setExtensions(array $extensions): self
     {
-        $this->extensions = (array) $extensions;
+        $this->extensions = $extensions;
 
         return $this;
     }
 
-    /**
-     * Set the category that will be rendered under the "extensions" key of the error response.
-     *
-     * @param  string  $category
-     * @return $this
-     */
     public function setCategory(string $category): self
     {
         $this->category = $category;

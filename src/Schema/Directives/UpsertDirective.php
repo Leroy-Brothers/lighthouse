@@ -10,7 +10,7 @@ class UpsertDirective extends MutationExecutorDirective
 {
     public static function definition(): string
     {
-        return /** @lang GraphQL */ <<<'SDL'
+        return /** @lang GraphQL */ <<<'GRAPHQL'
 """
 Create or update an Eloquent model with the input values of the field.
 """
@@ -22,6 +22,8 @@ directive @upsert(
   model: String
 
   """
+  DEPRECATED use @globalId, will be removed in v6
+
   Set to `true` to use global ids for finding the model.
   If set to `false`, regular non-global ids are used.
   """
@@ -34,7 +36,7 @@ directive @upsert(
   """
   relation: String
 ) on FIELD_DEFINITION | ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
-SDL;
+GRAPHQL;
     }
 
     protected function makeExecutionFunction(?Relation $parentRelation = null): callable

@@ -1,19 +1,12 @@
 <?php
 
-use Illuminate\Support\Str;
-
 if ($routeConfig = config('lighthouse.route')) {
     /** @var \Illuminate\Contracts\Routing\Registrar|\Laravel\Lumen\Routing\Router $router */
     $router = app('router');
 
-    $method = 'addRoute';
-    if (Str::startsWith(app()->version(), '5.5.')) {
-        $method = 'match';
-    }
-
     $actions = [
         'as' => $routeConfig['name'] ?? 'graphql',
-        'uses' => \Nuwave\Lighthouse\Support\Http\Controllers\GraphQLController::class.'@query',
+        'uses' => \Nuwave\Lighthouse\Support\Http\Controllers\GraphQLController::class,
     ];
 
     if (isset($routeConfig['middleware'])) {
@@ -28,7 +21,7 @@ if ($routeConfig = config('lighthouse.route')) {
         $actions['domain'] = $routeConfig['domain'];
     }
 
-    $router->$method(
+    $router->addRoute(
         ['GET', 'POST'],
         $routeConfig['uri'] ?? 'graphql',
         $actions

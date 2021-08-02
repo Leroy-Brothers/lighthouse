@@ -11,14 +11,14 @@ use Tests\TestCase;
 
 class DeferTest extends TestCase
 {
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->setUpDeferStream();
     }
 
-    protected function getPackageProviders($app)
+    protected function getPackageProviders($app): array
     {
         return array_merge(
             parent::getPackageProviders($app),
@@ -38,15 +38,13 @@ class DeferTest extends TestCase
         }
         ');
 
-        $this->assertTrue(
-            in_array(
-                'defer',
-                $introspection->jsonGet('data.__schema.directives.*.name')
-            )
+        $this->assertContains(
+            'defer',
+            $introspection->json('data.__schema.directives.*.name')
         );
     }
 
-    public function testCanDeferFields(): void
+    public function testDeferFields(): void
     {
         $this->mockResolver([
             'name' => 'John Doe',
@@ -99,7 +97,7 @@ class DeferTest extends TestCase
         );
     }
 
-    public function testCanDeferNestedFields(): void
+    public function testDeferNestedFields(): void
     {
         $data = [
             'name' => 'John Doe',
@@ -153,7 +151,7 @@ class DeferTest extends TestCase
         $this->assertSame($data['parent']['parent']['name'], $nestedDeferred['data']['name']);
     }
 
-    public function testCanDeferNestedFieldsOnMutations(): void
+    public function testDeferNestedFieldsOnMutations(): void
     {
         $this->mockResolver([
             'name' => 'John Doe',
@@ -212,7 +210,7 @@ class DeferTest extends TestCase
         );
     }
 
-    public function testCanDeferListFields(): void
+    public function testDeferListFields(): void
     {
         $data = [
             [
@@ -268,7 +266,7 @@ class DeferTest extends TestCase
         $this->assertSame($data[1]['author']['name'], Arr::get($deferredPost2, 'name'));
     }
 
-    public function testCanDeferGroupedListFields(): void
+    public function testDeferGroupedListFields(): void
     {
         $data = [
             [
@@ -485,13 +483,7 @@ class DeferTest extends TestCase
                 }
             }
         }
-        ')->assertJson([
-            'errors' => [
-                [
-                    'message' => DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_NON_NULLABLE_FIELD,
-                ],
-            ],
-        ]);
+        ')->assertGraphQLErrorMessage(DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_NON_NULLABLE_FIELD);
     }
 
     public function testDoesNotDeferWithIncludeAndSkipDirectives(): void
@@ -649,13 +641,7 @@ class DeferTest extends TestCase
                 name
             }
         }
-        ')->assertJson([
-            'errors' => [
-                [
-                    'message' => DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_ROOT_MUTATION_FIELD,
-                ],
-            ],
-        ]);
+        ')->assertGraphQLErrorMessage(DeferrableDirective::THE_DEFER_DIRECTIVE_CANNOT_BE_USED_ON_A_ROOT_MUTATION_FIELD);
     }
 
     public function testDoesNotDeferFieldsIfFalse(): void

@@ -3,33 +3,45 @@
 namespace Nuwave\Lighthouse\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Cache\Repository;
+use Illuminate\Contracts\Cache\Factory as CacheFactory;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
+use Illuminate\Filesystem\Filesystem;
+use Nuwave\Lighthouse\Exceptions\UnknownCacheVersionException;
 
 class ClearCacheCommand extends Command
 {
     /**
-     * The name and signature of the console command.
-     *
-     * @var string
+     * TODO remove once we require Laravel 6 which allows $this->call(ClearCacheCommand::class).
      */
-    protected $signature = 'lighthouse:clear-cache';
+    const NAME = 'lighthouse:clear-cache';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Clear the cache for the GraphQL AST.';
+    protected $name = self::NAME;
 
-    /**
-     * Execute the console command.
-     *
-     * @param  \Illuminate\Contracts\Cache\Repository  $cache
-     * @return void
-     */
-    public function handle(Repository $cache): void
+    protected $description = 'Clear the GraphQL schema cache.';
+
+    public function handle(ConfigRepository $config): void
     {
-        $cache->forget(config('lighthouse.cache.key'));
+        $version = $config->get('lighthouse.cache.version', 1);
+        switch ($version) {
+            case 1:
+                /** @var \Illuminate\Contracts\Cache\Factory $cacheFactory */
+                $cacheFactory = app(CacheFactory::class);
+
+                $cacheFactory
+                    ->store($config->get('lighthouse.cache.store'))
+                    ->forget($config->get('lighthouse.cache.key'));
+                break;
+            case 2:
+                /** @var \Illuminate\Filesystem\Filesystem $filesystem */
+                $filesystem = app(Filesystem::class);
+
+                $path = $config->get('lighthouse.cache.path')
+                    ?? base_path('bootstrap/cache/lighthouse-schema.php');
+                $filesystem->delete($path);
+                break;
+            default:
+                throw new UnknownCacheVersionException($version);
+        }
 
         $this->info('GraphQL AST schema cache deleted.');
     }

@@ -10,8 +10,8 @@ class PaginatorField
     /**
      * Resolve paginator info for connection.
      *
-     * @param  \Illuminate\Pagination\LengthAwarePaginator  $root
-     * @return array
+     * @param  \Illuminate\Pagination\LengthAwarePaginator<mixed>  $root
+     * @return array<string, mixed>
      */
     public function paginatorInfoResolver(LengthAwarePaginator $root): array
     {
@@ -30,11 +30,12 @@ class PaginatorField
     /**
      * Resolve data for connection.
      *
-     * @param  \Illuminate\Pagination\LengthAwarePaginator  $root
-     * @return \Illuminate\Support\Collection
+     * @param  \Illuminate\Pagination\LengthAwarePaginator<mixed>  $root
+     * @return \Illuminate\Support\Collection<mixed>
      */
     public function dataResolver(LengthAwarePaginator $root): Collection
     {
+        // @phpstan-ignore-next-line static refers to the wrong class because it is a proxied method call
         return $root->values();
     }
 }

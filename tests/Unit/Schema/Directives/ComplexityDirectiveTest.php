@@ -7,13 +7,13 @@ use Tests\TestCase;
 
 class ComplexityDirectiveTest extends TestCase
 {
-    public function testCanSetDefaultComplexityOnField(): void
+    public function testSetDefaultComplexityOnField(): void
     {
-        $schema = $this->buildSchemaWithPlaceholderQuery('
+        $schema = $this->buildSchemaWithPlaceholderQuery(/** @lang GraphQL */ '
         type User {
             posts: [Post!]! @complexity @hasMany
         }
-        
+
         type Post {
             title: String
         }
@@ -26,22 +26,22 @@ class ComplexityDirectiveTest extends TestCase
             ->getComplexityFn();
 
         $this->assertSame(100, $complexityFn(10, ['first' => 10]));
-        $this->assertSame(100, $complexityFn(10, [config('lighthouse.pagination_amount_argument') => 10]));
     }
 
-    public function testCanSetCustomComplexityResolver(): void
+    public function testSetCustomComplexityResolver(): void
     {
-        $schema = $this->buildSchemaWithPlaceholderQuery('
+        $schema = $this->buildSchemaWithPlaceholderQuery(/** @lang GraphQL */ <<<GRAPHQL
         type User {
             posts: [Post!]!
-                @complexity(resolver: "'.$this->qualifyTestResolver('complexity').'")
+                @complexity(resolver: "{$this->qualifyTestResolver('complexity')}")
                 @hasMany
         }
-        
+
         type Post {
             title: String
         }
-        ');
+GRAPHQL
+        );
 
         /** @var \GraphQL\Type\Definition\ObjectType $user */
         $user = $schema->getType('User');
@@ -54,22 +54,28 @@ class ComplexityDirectiveTest extends TestCase
 
     public function testResolvesComplexityResolverThroughDefaultNamespace(): void
     {
-        $schema = $this->buildSchema('
+        $schema = $this->buildSchema(/** @lang GraphQL */ '
         type Query {
             foo: Int
                 @complexity(resolver: "Foo@complexity")
         }
         ');
 
-        $complexityFn = $schema->getQueryType()
+        /** @var \GraphQL\Type\Definition\ObjectType $queryType */
+        $queryType = $schema->getQueryType();
+
+        $complexityFn = $queryType
             ->getField('foo')
             ->getComplexityFn();
 
         $this->assertSame(42, $complexityFn());
     }
 
+    /**
+     * @param  array<string, int|null>  $args
+     */
     public function complexity(int $childrenComplexity, array $args): int
     {
-        return $childrenComplexity * Arr::get($args, 'foo', 0);
+        return $childrenComplexity * (int) Arr::get($args, 'foo', 0);
     }
 }

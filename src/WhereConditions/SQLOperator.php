@@ -66,14 +66,11 @@ GRAPHQL;
         return 'EQ';
     }
 
-    /**
-     * Apply the conditions to the query builder.
-     *
-     * @param  \Illuminate\Database\Query\Builder  $builder
-     * @param  array  $whereConditions
-     * @param  string  $boolean
-     * @return \Illuminate\Database\Query\Builder
-     */
+    public function defaultHasOperator(): string
+    {
+        return 'GTE';
+    }
+
     public function applyConditions($builder, array $whereConditions, string $boolean)
     {
         $column = $whereConditions['column'];
@@ -82,7 +79,7 @@ GRAPHQL;
         $method = 'where';
 
         // The first argument to conditions methods is always the column name
-        $args[] = $column;
+        $args = [$column];
 
         // Some operators require calling Laravel's conditions in different ways
         $operator = $whereConditions['operator'];
@@ -113,7 +110,7 @@ GRAPHQL;
         // The condition methods always have the `$boolean` arg after the value
         $args[] = $boolean;
 
-        return call_user_func_array([$builder, $method], $args);
+        return $builder->{$method}(...$args);
     }
 
     protected function operatorArity(string $operator): int

@@ -7,22 +7,23 @@ use GraphQL\Language\AST\ObjectTypeDefinitionNode;
 use Illuminate\Database\Eloquent\Model;
 use Nuwave\Lighthouse\Schema\AST\DocumentAST;
 use Nuwave\Lighthouse\Schema\Directives\ModifyModelExistenceDirective;
-use Nuwave\Lighthouse\Support\Contracts\DefinedDirective;
 use Nuwave\Lighthouse\Support\Contracts\FieldManipulator;
 
-class RestoreDirective extends ModifyModelExistenceDirective implements DefinedDirective, FieldManipulator
+class RestoreDirective extends ModifyModelExistenceDirective implements FieldManipulator
 {
-    const MODEL_NOT_USING_SOFT_DELETES = 'Use the @restore directive only for Model classes that use the SoftDeletes trait.';
+    public const MODEL_NOT_USING_SOFT_DELETES = 'Use the @restore directive only for Model classes that use the SoftDeletes trait.';
 
     public static function definition(): string
     {
-        return /** @lang GraphQL */ <<<'SDL'
+        return /** @lang GraphQL */ <<<'GRAPHQL'
 """
 Un-delete one or more soft deleted models by their ID.
 The field must have a single non-null argument that may be a list.
 """
 directive @restore(
   """
+  DEPRECATED use @globalId, will be removed in v6
+
   Set to `true` to use global ids for finding the model.
   If set to `false`, regular non-global ids are used.
   """
@@ -34,39 +35,25 @@ directive @restore(
   """
   model: String
 ) on FIELD_DEFINITION
-SDL;
+GRAPHQL;
     }
 
-    /**
-     * Find one or more models by id.
-     *
-     * @param  string|\Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\SoftDeletes  $modelClass
-     * @param  string|int|string[]|int[]  $idOrIds
-     * @return \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\Collection
-     */
     protected function find(string $modelClass, $idOrIds)
     {
+        /** @see \Illuminate\Database\Eloquent\SoftDeletes */
+        // @phpstan-ignore-next-line because it involves mixins
         return $modelClass::withTrashed()->find($idOrIds);
     }
 
-    /**
-     * Bring a model in or out of existence.
-     *
-     * @param  \Illuminate\Database\Eloquent\Model|\Illuminate\Database\Eloquent\SoftDeletes  $model
-     * @return void
-     */
-    protected function modifyExistence(Model $model): void
+    protected function modifyExistence(Model $model): bool
     {
-        $model->restore();
+        /** @see \Illuminate\Database\Eloquent\SoftDeletes */
+        // @phpstan-ignore-next-line because it involves mixins
+        return (bool) $model->restore();
     }
 
     /**
      * Manipulate the AST based on a field definition.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $documentAST
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
-     * @param  \GraphQL\Language\AST\ObjectTypeDefinitionNode  $parentType
-     * @return void
      */
     public function manipulateFieldDefinition(
         DocumentAST &$documentAST,

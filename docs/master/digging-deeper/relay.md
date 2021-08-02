@@ -4,14 +4,14 @@
 
 Relay requires a particular kind of pagination which is the [Cursor Connection](https://facebook.github.io/relay/graphql/connections.htm)
 To get a relay-compatible connection on a root query field, use the [@paginate](../api-reference/directives.md#paginate)
-directive with the pagination type `connection`.
+directive with the pagination type `CONNECTION`.
 
 > Lighthouse does not support actual cursor-based pagination as of now, see https://github.com/nuwave/lighthouse/issues/311 for details.
 > Under the hood, the "cursor" is decoded into a page offset.
 
 ```graphql
 type Query {
-    users: [User!]! @paginate(type: "connection")
+  users: [User!]! @paginate(type: CONNECTION)
 }
 ```
 
@@ -23,8 +23,8 @@ in Eloquent. Use the [@hasMany](../api-reference/directives.md#hasmany) directiv
 
 ```graphql
 type User {
-    name: String
-    posts: [Post!]! @hasMany(type: "connection")
+  name: String
+  posts: [Post!]! @hasMany(type: CONNECTION)
 }
 ```
 
@@ -42,10 +42,10 @@ own mechanism of encoding/decoding global ids.
 ## Input Object Mutations
 
 Lighthouse makes it easy to follow the principle of using a
-single field argument called `input`, just use the [`@spread`](../api-reference/directives.md#spread) directive.
+single field argument called `input`, just use the [@spread](../api-reference/directives.md#spread) directive.
 
 ```graphql
 type Mutation {
-    introduceShip(input: IntroduceShipInput! @spread): IntroduceShipPayload!
+  introduceShip(input: IntroduceShipInput! @spread): IntroduceShipPayload!
 }
 ```

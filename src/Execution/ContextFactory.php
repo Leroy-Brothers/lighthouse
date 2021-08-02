@@ -9,12 +9,6 @@ use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 
 class ContextFactory implements CreatesContext
 {
-    /**
-     * Generate GraphQL context.
-     *
-     * @param  \Illuminate\Http\Request  $request
-     * @return \Nuwave\Lighthouse\Support\Contracts\GraphQLContext
-     */
     public function generate(Request $request): GraphQLContext
     {
         return new Context($request);

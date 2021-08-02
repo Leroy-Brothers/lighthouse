@@ -3,8 +3,7 @@
 namespace Nuwave\Lighthouse\Execution;
 
 /**
- * May be returned from listeners of the event:.
- * @see \Nuwave\Lighthouse\Events\BuildExtensionsResponse
+ * May be returned from listeners of @see \Nuwave\Lighthouse\Events\BuildExtensionsResponse.
  */
 class ExtensionsResponse
 {
@@ -16,18 +15,12 @@ class ExtensionsResponse
     protected $key;
 
     /**
-     * JSON-encodable content of the extension.
-     *
-     * @var mixed
+     * @var mixed JSON-encodable content of the extension.
      */
     protected $content;
 
     /**
-     * ExtensionsResponse constructor.
-     *
-     * @param  string  $key
-     * @param  mixed  $content
-     * @return void
+     * @param  mixed  $content JSON-encodable content
      */
     public function __construct(string $key, $content)
     {
@@ -37,8 +30,6 @@ class ExtensionsResponse
 
     /**
      * Return the key of the extension.
-     *
-     * @return string
      */
     public function key(): string
     {
@@ -46,9 +37,7 @@ class ExtensionsResponse
     }
 
     /**
-     * Return the JSON-encodable content of the extension.
-     *
-     * @return mixed
+     * @return mixed JSON-encodable content of the extension.
      */
     public function content()
     {

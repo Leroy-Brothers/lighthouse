@@ -2,53 +2,62 @@
 
 namespace Nuwave\Lighthouse\Console;
 
+use GraphQL\Type\Introspection;
+use GraphQL\Type\Schema;
 use GraphQL\Utils\SchemaPrinter;
-use Illuminate\Cache\Repository;
 use Illuminate\Console\Command;
 use Illuminate\Contracts\Filesystem\Filesystem;
-use Nuwave\Lighthouse\GraphQL;
+use Nuwave\Lighthouse\Schema\SchemaBuilder;
 
 class PrintSchemaCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = '
-        lighthouse:print-schema
-        {--W|write : Write the output to a file}
-    ';
+    public const GRAPHQL_FILENAME = 'lighthouse-schema.graphql';
+    public const JSON_FILENAME = 'lighthouse-schema.json';
 
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
-    protected $description = 'Compile the final GraphQL schema and print the result.';
+    protected $signature = <<<'SIGNATURE'
+lighthouse:print-schema
+{--W|write : Write the output to a file}
+{--json : Output JSON instead of GraphQL SDL}
+SIGNATURE;
 
-    /**
-     * Execute the console command.
-     *
-     * @param  \Illuminate\Cache\Repository  $cache
-     * @param  \Illuminate\Contracts\Filesystem\Filesystem  $storage
-     * @param  \Nuwave\Lighthouse\GraphQL  $graphQL
-     * @return void
-     */
-    public function handle(Repository $cache, Filesystem $storage, GraphQL $graphQL): void
+    protected $description = 'Compile the GraphQL schema and print the result.';
+
+    public function handle(Filesystem $storage, SchemaBuilder $schemaBuilder): void
     {
         // Clear the cache so this always gets the current schema
-        $cache->forget(config('lighthouse.cache.key'));
+        $this->callSilent(ClearCacheCommand::NAME);
 
-        $schema = SchemaPrinter::doPrint(
-            $graphQL->prepSchema()
-        );
+        $schema = $schemaBuilder->schema();
+        if ($this->option('json')) {
+            $filename = self::JSON_FILENAME;
+            $schemaString = $this->toJson($schema);
+        } else {
+            $filename = self::GRAPHQL_FILENAME;
+            $schemaString = SchemaPrinter::doPrint($schema);
+        }
 
         if ($this->option('write')) {
-            $storage->put('lighthouse-schema.graphql', $schema);
-            $this->info('Wrote schema to the default file storage (usually storage/app) as "lighthouse-schema.graphql".');
+            $storage->put($filename, $schemaString);
+            $this->info('Wrote schema to the default file storage (usually storage/app) as "'.$filename.'".');
         } else {
-            $this->info($schema);
+            $this->info($schemaString);
         }
+    }
+
+    protected function toJson(Schema $schema): string
+    {
+        $introspectionResult = Introspection::fromSchema($schema);
+        if ($introspectionResult === null) {
+            throw new \Exception(<<<'MESSAGE'
+Did not receive a valid introspection result.
+Check if your schema is correct with:
+
+    php artisan lighthouse:validate-schema
+
+MESSAGE
+);
+        }
+
+        return \Safe\json_encode($introspectionResult);
     }
 }

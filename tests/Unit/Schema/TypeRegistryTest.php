@@ -3,14 +3,15 @@
 namespace Tests\Unit\Schema;
 
 use Closure;
+use GraphQL\Language\Parser;
 use GraphQL\Type\Definition\EnumType;
+use GraphQL\Type\Definition\EnumValueDefinition;
 use GraphQL\Type\Definition\InputObjectType;
 use GraphQL\Type\Definition\InterfaceType;
 use GraphQL\Type\Definition\ObjectType;
 use GraphQL\Type\Definition\ScalarType;
 use GraphQL\Type\Definition\UnionType;
 use Nuwave\Lighthouse\Exceptions\DefinitionException;
-use Nuwave\Lighthouse\Schema\AST\PartialParser;
 use Nuwave\Lighthouse\Schema\TypeRegistry;
 use Tests\TestCase;
 
@@ -23,7 +24,7 @@ class TypeRegistryTest extends TestCase
      */
     protected $typeRegistry;
 
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -32,7 +33,7 @@ class TypeRegistryTest extends TestCase
 
     public function testSetsEnumValueThroughDirective(): void
     {
-        $enumNode = PartialParser::enumTypeDefinition('
+        $enumNode = Parser::enumTypeDefinition(/** @lang GraphQL */ '
         enum Role {
             ADMIN @enum(value: 123)
         }
@@ -42,12 +43,16 @@ class TypeRegistryTest extends TestCase
 
         $this->assertInstanceOf(EnumType::class, $enumType);
         $this->assertSame('Role', $enumType->name);
-        $this->assertSame(123, $enumType->getValue('ADMIN')->value);
+
+        $enumValueDefinition = $enumType->getValue('ADMIN');
+        $this->assertInstanceOf(EnumValueDefinition::class, $enumValueDefinition);
+        /** @var \GraphQL\Type\Definition\EnumValueDefinition $enumValueDefinition */
+        $this->assertSame(123, $enumValueDefinition->value);
     }
 
     public function testDefaultsEnumValueToItsName(): void
     {
-        $enumNode = PartialParser::enumTypeDefinition('
+        $enumNode = Parser::enumTypeDefinition(/** @lang GraphQL */ '
         enum Role {
             EMPLOYEE
         }
@@ -57,12 +62,16 @@ class TypeRegistryTest extends TestCase
 
         $this->assertInstanceOf(EnumType::class, $enumType);
         $this->assertSame('Role', $enumType->name);
-        $this->assertSame('EMPLOYEE', $enumType->getValue('EMPLOYEE')->value);
+
+        $enumValueDefinition = $enumType->getValue('EMPLOYEE');
+        $this->assertInstanceOf(EnumValueDefinition::class, $enumValueDefinition);
+        /** @var \GraphQL\Type\Definition\EnumValueDefinition $enumValueDefinition */
+        $this->assertSame('EMPLOYEE', $enumValueDefinition->value);
     }
 
-    public function testCanTransformScalars(): void
+    public function testTransformScalars(): void
     {
-        $scalarNode = PartialParser::scalarTypeDefinition('
+        $scalarNode = Parser::scalarTypeDefinition(/** @lang GraphQL */ '
         scalar Email
         ');
         /** @var \GraphQL\Type\Definition\ScalarType $scalarType */
@@ -72,9 +81,9 @@ class TypeRegistryTest extends TestCase
         $this->assertSame('Email', $scalarType->name);
     }
 
-    public function testCanPointToScalarClassThroughDirective(): void
+    public function testPointToScalarClassThroughDirective(): void
     {
-        $scalarNode = PartialParser::scalarTypeDefinition('
+        $scalarNode = Parser::scalarTypeDefinition(/** @lang GraphQL */ '
         scalar DateTime @scalar(class: "Nuwave\\\Lighthouse\\\Schema\\\Types\\\Scalars\\\DateTime")
         ');
         /** @var \GraphQL\Type\Definition\ScalarType $scalarType */
@@ -84,9 +93,9 @@ class TypeRegistryTest extends TestCase
         $this->assertSame('DateTime', $scalarType->name);
     }
 
-    public function testCanPointToScalarClassThroughDirectiveWithoutNamespace(): void
+    public function testPointToScalarClassThroughDirectiveWithoutNamespace(): void
     {
-        $scalarNode = PartialParser::scalarTypeDefinition('
+        $scalarNode = Parser::scalarTypeDefinition(/** @lang GraphQL */ '
         scalar SomeEmail @scalar(class: "Email")
         ');
         /** @var \GraphQL\Type\Definition\ScalarType $scalarType */
@@ -96,9 +105,9 @@ class TypeRegistryTest extends TestCase
         $this->assertSame('SomeEmail', $scalarType->name);
     }
 
-    public function testCanTransformInterfaces(): void
+    public function testTransformInterfaces(): void
     {
-        $interfaceNode = PartialParser::interfaceTypeDefinition('
+        $interfaceNode = Parser::interfaceTypeDefinition(/** @lang GraphQL */ '
         interface Foo {
             bar: String
         }
@@ -113,7 +122,7 @@ class TypeRegistryTest extends TestCase
 
     public function testResolvesInterfaceThoughNamespace(): void
     {
-        $interfaceNode = PartialParser::interfaceTypeDefinition('
+        $interfaceNode = Parser::interfaceTypeDefinition(/** @lang GraphQL */ '
         interface Nameable {
             bar: String
         }
@@ -127,7 +136,7 @@ class TypeRegistryTest extends TestCase
 
     public function testResolvesInterfaceThoughSecondaryNamespace(): void
     {
-        $interfaceNode = PartialParser::interfaceTypeDefinition('
+        $interfaceNode = Parser::interfaceTypeDefinition(/** @lang GraphQL */ '
         interface Bar {
             bar: String
         }
@@ -139,9 +148,9 @@ class TypeRegistryTest extends TestCase
         $this->assertSame('Bar', $interfaceType->name);
     }
 
-    public function testCanTransformUnions(): void
+    public function testTransformUnions(): void
     {
-        $unionNode = PartialParser::unionTypeDefinition('
+        $unionNode = Parser::unionTypeDefinition(/** @lang GraphQL */ '
         union Foo = Bar
         ');
         /** @var \GraphQL\Type\Definition\UnionType $unionType */
@@ -152,9 +161,9 @@ class TypeRegistryTest extends TestCase
         $this->assertInstanceOf(Closure::class, $unionType->config['resolveType']);
     }
 
-    public function testCanTransformObjectTypes(): void
+    public function testTransformObjectTypes(): void
     {
-        $objectTypeNode = PartialParser::objectTypeDefinition('
+        $objectTypeNode = Parser::objectTypeDefinition(/** @lang GraphQL */ '
         type User {
             foo(bar: String! @hash): String!
         }
@@ -167,9 +176,9 @@ class TypeRegistryTest extends TestCase
         $this->assertArrayHasKey('foo', $objectType->getFields());
     }
 
-    public function testCanTransformInputObjectTypes(): void
+    public function testTransformInputObjectTypes(): void
     {
-        $inputNode = PartialParser::inputObjectTypeDefinition('
+        $inputNode = Parser::inputObjectTypeDefinition(/** @lang GraphQL */ '
         input UserInput {
             foo: String!
         }
@@ -182,9 +191,28 @@ class TypeRegistryTest extends TestCase
         $this->assertArrayHasKey('foo', $inputObjectType->getFields());
     }
 
-    public function testThrowsWhenMissingType(): void
+    public function testGetThrowsWhenMissingType(): void
     {
         $this->expectException(DefinitionException::class);
         $this->typeRegistry->get('ThisTypeDoesNotExist');
+    }
+
+    public function testDeterminesIfHasType(): void
+    {
+        $fooName = 'Foo';
+        $this->assertFalse($this->typeRegistry->has($fooName));
+
+        $foo = new ObjectType(['name' => $fooName]);
+        $this->typeRegistry->register($foo);
+        $this->assertTrue($this->typeRegistry->has($fooName));
+    }
+
+    public function testThrowsWhenRegisteringExistingType(): void
+    {
+        $foo = new ObjectType(['name' => 'Foo']);
+        $this->typeRegistry->register($foo);
+
+        $this->expectException(DefinitionException::class);
+        $this->typeRegistry->register($foo);
     }
 }

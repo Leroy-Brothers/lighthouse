@@ -2,13 +2,15 @@
 
 namespace Nuwave\Lighthouse\WhereConditions;
 
+use Exception;
+use Illuminate\Database\Eloquent\Builder as EloquentBuilder;
 use Illuminate\Support\Str;
 
 class WhereHasConditionsDirective extends WhereConditionsBaseDirective
 {
     public static function definition(): string
     {
-        return /** @lang GraphQL */ <<<'SDL'
+        return /** @lang GraphQL */ <<<'GRAPHQL'
 """
 Allows clients to filter a query based on the existence of a related model, using
 a dynamically controlled `WHERE` condition that applies to the relationship.
@@ -36,40 +38,42 @@ directive @whereHasConditions(
     Mutually exclusive with the `columns` argument.
     """
     columnsEnum: String
-) on ARGUMENT_DEFINITION | INPUT_FIELD_DEFINITION
-SDL;
+) on ARGUMENT_DEFINITION
+GRAPHQL;
     }
 
     /**
-     * @param  \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder  $builder
-     * @param  mixed[]  $whereConditions
-     * @return \Illuminate\Database\Query\Builder|\Illuminate\Database\Eloquent\Builder
+     * @param  array<string, mixed>|null  $value The client given conditions
      */
-    public function handleBuilder($builder, $whereConditions)
+    public function handleBuilder($builder, $value): object
     {
-        // The value `null` should be allowed but have no effect on the query.
-        // Just return the unmodified Builder instance.
-        if (is_null($whereConditions)) {
+        if (null === $value) {
             return $builder;
         }
 
-        return $builder->whereHas(
-            $this->getRelationName(),
-            function ($builder) use ($whereConditions): void {
-                // This extra nesting is required for the `OR` condition to work correctly.
-                $builder->whereNested(
-                    function ($builder) use ($whereConditions): void {
-                        $this->handleWhereConditions($builder, $whereConditions);
-                    }
-                );
-            }
+        if (! $builder instanceof EloquentBuilder) {
+            throw new Exception('Can not get model from builder of class: '.get_class($builder));
+        }
+        $model = $builder->getModel();
+
+        $this->handleWhereConditions(
+            $builder,
+            [
+                'HAS' => [
+                    'relation' => $this->getRelationName(),
+                    'amount' => WhereConditionsServiceProvider::DEFAULT_HAS_AMOUNT,
+                    'operator' => '>=',
+                    'condition' => $value,
+                ],
+            ],
+            $model
         );
+
+        return $builder;
     }
 
     /**
      * Get the name of the Eloquent relationship that is used for the query.
-     *
-     * @return string
      */
     public function getRelationName(): string
     {
@@ -84,5 +88,10 @@ SDL;
         }
 
         return $relationName;
+    }
+
+    protected function generatedInputSuffix(): string
+    {
+        return 'WhereHasConditions';
     }
 }

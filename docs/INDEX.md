@@ -1,15 +1,16 @@
 ---
 home: true
+title: Lighthouse - A framework for serving GraphQL from Laravel
 heroImage: /logo.svg
 actionText: Get Started  →
-actionLink: /docs/latest
+actionLink: /latest/getting-started/installation
 features:
-- title: 📜 SDL First
-  details: Use the GraphQL Schema Definition Language to describe your data and add functionality through server-side directives.
-- title: ❤ Laravel Friendly
-  details: Build a GraphQL server on top of an existing Laravel application. Maximize code reuse and work with concepts you already know.
-- title: ⚡ Optimized for Eloquent
-  details: Lighthouse leverages your existing models and creates optimized database queries out of the box.
+  - title: 📜 SDL First
+    details: Use the GraphQL Schema Definition Language to describe your data and add functionality through server-side directives.
+  - title: ❤ Laravel Friendly
+    details: Build a GraphQL server on top of an existing Laravel application. Maximize code reuse and work with concepts you already know.
+  - title: ⚡ Optimized for Eloquent
+    details: Lighthouse leverages your existing models and creates optimized database queries out of the box.
 footer: Made with ❤ by people
 ---
 

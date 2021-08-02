@@ -5,16 +5,31 @@ namespace Tests\Utils\Models;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 
+/**
+ * Primary key.
+ * @property string $barcode
+ * @property string $uuid
+ *
+ * Attributes
+ * @property string $name
+ *
+ * Timestamps
+ * @property \Illuminate\Support\Carbon $created_at
+ * @property \Illuminate\Support\Carbon $updated_at
+ *
+ * Foreign keys
+ * @property int $color_id
+ *
+ * Relations
+ * @property-read \Tests\Utils\Models\Color $color
+ */
 class Product extends Model
 {
     /**
-     * @var string[]
+     * @var array<string>
      */
     protected $primaryKey = ['barcode', 'uuid'];
 
-    /**
-     * @var bool
-     */
     public $incrementing = false;
 
     public function color(): BelongsTo
@@ -27,6 +42,9 @@ class Product extends Model
     // Usually this is placed on traits
     // This is not related to Lighthouse
 
+    /**
+     * @return array<string, mixed>
+     */
     public function getKey(): array
     {
         $attributes = [];

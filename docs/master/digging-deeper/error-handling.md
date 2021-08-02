@@ -1,7 +1,7 @@
 # Error Handling
 
 Most of the error handling in Lighthouse is pretty closely based upon **webonyx/graphql-php**,
-so you can find a lot of valuable information [in their documentation](http://webonyx.github.io/graphql-php/error-handling/).
+so you can find a lot of valuable information [in their documentation](https://webonyx.github.io/graphql-php/error-handling).
 
 ## User-friendly Errors
 
@@ -12,15 +12,15 @@ explicit error message to the user.
 **webonyx/graphql-php** offers the [`GraphQL\Error\ClientAware`](https://github.com/webonyx/graphql-php/blob/master/src/Error/ClientAware.php) interface, that can
 be implemented by Exceptions to control how they are rendered to the client.
 
-Head over their [Error Handling docs](http://webonyx.github.io/graphql-php/error-handling/) to learn more.
+Head over their [Error Handling docs](https://webonyx.github.io/graphql-php/error-handling) to learn more.
 
 ## Additional Error Information
 
 The interface [`\Nuwave\Lighthouse\Exceptions\RendersErrorsExtensions`](https://github.com/nuwave/lighthouse/blob/master/src/Exceptions/RendersErrorsExtensions.php)
-may be extended to add more information then just an error message to the rendered error output.
+may be extended to add more information than just an error message to the rendered error output.
 
 Let's say you want to have a custom exception type that contains information about
-the reason why the exception was thrown.
+the reason the exception was thrown.
 
 ```php
 <?php
@@ -33,17 +33,10 @@ use Nuwave\Lighthouse\Exceptions\RendersErrorsExtensions;
 class CustomException extends Exception implements RendersErrorsExtensions
 {
     /**
-    * @var @string 
+    * @var @string
     */
-    private $reason;
+    protected $reason;
 
-    /**
-    * CustomException constructor.
-    * 
-    * @param  string  $message
-    * @param  string  $reason
-    * @return void
-    */
     public function __construct(string $message, string $reason)
     {
         parent::__construct($message);
@@ -139,12 +132,66 @@ A query that produces an error will render like this:
 
 ## Registering Error Handlers
 
-You can use the config to register error handlers that receive the Errors that occur during execution
-and handle them. You may use this to log, filter or format the errors.
-The classes must implement [`\Nuwave\Lighthouse\Execution\ErrorHandler`](https://github.com/nuwave/lighthouse/blob/master/src/Execution/ErrorHandler.php)
+Error handlers receive the errors that occur during GraphQL execution.
+They can be used to log, filter or format the errors.
 
-## Collecting Errors
+Add them to your `lighthouse.php` config file, for example:
+
+```php
+'error_handlers' => [
+    \Nuwave\Lighthouse\Execution\ExtensionErrorHandler::class,
+    \App\GraphQL\MyErrorHandler::class,
+],
+```
+
+An error handler class must implement [`\Nuwave\Lighthouse\Execution\ErrorHandler`](https://github.com/nuwave/lighthouse/blob/master/src/Execution/ErrorHandler.php)
+
+```php
+<?php
+
+namespace App\GraphQL;
+
+use Closure;
+use GraphQL\Error\Error;
+use Nuwave\Lighthouse\Execution\ErrorHandler;
+
+class ExtensionErrorHandler implements ErrorHandler
+{
+    public function __invoke(?Error $error, Closure $next): ?array
+    {
+        // You can discard errors by returning null
+        if ($this->shouldBeDiscarded($error)) {
+            return null;
+        }
+
+        // Error handlers are instantiated once per query
+        $this->errorCount++;
+
+        // Keep the pipeline going, last step formats the error into an array
+        return $next($error);
+    }
+}
+```
+
+## Partial Errors
 
 As a GraphQL query may return a partial result, you may not always want to abort
-execution immediately after an error occurred. You can use the [`\Nuwave\Lighthouse\Execution\ErrorBuffer`](https://github.com/nuwave/lighthouse/blob/master/src/Execution/ErrorBuffer.php)
+execution immediately after an error occurred.
+
+Use the [`ErrorPool`](https://github.com/nuwave/lighthouse/blob/master/src/Execution/ErrorPool.php)
 when you want to collect multiple errors before returning a result.
+
+```php
+try {
+    // Something that might fail but still allows for a partial result
+} catch (\Throwable $error) {
+    $errorPool = app(\Nuwave\Lighthouse\Execution\ErrorPool::class);
+    $errorPool->record($error);
+}
+
+return $result;
+```
+
+## Testing Errors
+
+See [PHPUnit - Testing Errors](../testing/phpunit.md#testing-errors).

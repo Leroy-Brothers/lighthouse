@@ -2,36 +2,42 @@
 
 namespace Tests\Integration;
 
-use Illuminate\Cache\CacheManager;
-use Illuminate\Cache\Repository;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Nuwave\Lighthouse\Schema\AST\ASTBuilder;
-use Tests\SerializingArrayStore;
 use Tests\TestCase;
+use Tests\TestsSchemaCache;
+use Tests\TestsSerialization;
 use Tests\Utils\Models\Comment;
 
 class SchemaCachingTest extends TestCase
 {
-    protected function getEnvironmentSetUp($app)
+    use TestsSerialization;
+    use TestsSchemaCache;
+
+    public function setUp(): void
     {
-        parent::getEnvironmentSetUp($app);
+        parent::setUp();
 
-        /** @var \Illuminate\Contracts\Config\Repository $config */
-        $config = $app['config'];
-
-        $config->set('lighthouse.cache.enable', true);
-
-        /** @var \Illuminate\Cache\CacheManager $cache */
-        $cache = $app->make(CacheManager::class);
-        $cache->extend('serializing-array', function () {
-            return new Repository(
-                new SerializingArrayStore()
-            );
-        });
-        $config->set('cache.stores.array.driver', 'serializing-array');
+        $this->setUpSchemaCache();
+        $this->useSerializingArrayStore($this->app);
     }
 
-    public function testSchemaCachingWithUnionType(): void
+    protected function tearDown(): void
     {
+        $this->tearDownSchemaCache();
+
+        parent::tearDown();
+    }
+
+    /**
+     * @dataProvider cacheVersions
+     */
+    public function testSchemaCachingWithUnionType(int $cacheVersion): void
+    {
+        /** @var \Illuminate\Contracts\Config\Repository $config */
+        $config = app(ConfigRepository::class);
+        $config->set('lighthouse.cache.version', $cacheVersion);
+
         $this->schema = /** @lang GraphQL */ '
         type Query {
             foo: Foo @mock
@@ -40,7 +46,7 @@ class SchemaCachingTest extends TestCase
         union Foo = Comment | Color
 
         type Comment {
-            bar: ID
+            comment: ID
         }
 
         type Color {
@@ -49,22 +55,22 @@ class SchemaCachingTest extends TestCase
         ';
         $this->cacheSchema();
 
-        $this->mockResolver(new Comment([
-            'bar' => 'bar',
-        ]));
+        $comment = new Comment();
+        $comment->comment = 'foo';
+        $this->mockResolver($comment);
 
         $this->graphQL(/** @lang GraphQL */ '
         {
             foo {
                 ... on Comment {
-                    bar
+                    comment
                 }
             }
         }
         ')->assertExactJson([
             'data' => [
                 'foo' => [
-                    'bar' => 'bar',
+                    'comment' => $comment->comment,
                 ],
             ],
         ]);
@@ -73,8 +79,9 @@ class SchemaCachingTest extends TestCase
     protected function cacheSchema(): void
     {
         /** @var \Nuwave\Lighthouse\Schema\AST\ASTBuilder $astBuilder */
-        $astBuilder = app(ASTBuilder::class);
+        $astBuilder = $this->app->make(ASTBuilder::class);
         $astBuilder->documentAST();
+
         $this->app->forgetInstance(ASTBuilder::class);
     }
 }

@@ -3,6 +3,7 @@
 namespace Tests\Integration\Schema\Directives;
 
 use Illuminate\Database\QueryException;
+use Nuwave\Lighthouse\Execution\Arguments\UpdateModel;
 use Tests\DBTestCase;
 use Tests\Utils\Models\Category;
 use Tests\Utils\Models\Company;
@@ -11,11 +12,11 @@ use Tests\Utils\Models\User;
 
 class UpdateDirectiveTest extends DBTestCase
 {
-    public function testCanUpdateFromFieldArguments(): void
+    public function testUpdateFromFieldArguments(): void
     {
         factory(Company::class)->create(['name' => 'foo']);
 
-        $this->schema .= '
+        $this->schema .= /** @lang GraphQL */ '
         type Company {
             id: ID!
             name: String!
@@ -29,7 +30,7 @@ class UpdateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         mutation {
             updateCompany(
                 id: 1
@@ -48,14 +49,14 @@ class UpdateDirectiveTest extends DBTestCase
             ],
         ]);
 
-        $this->assertSame('bar', Company::first()->name);
+        $this->assertSame('bar', Company::firstOrFail()->name);
     }
 
-    public function testCanUpdateFromInputObject(): void
+    public function testUpdateFromInputObject(): void
     {
         factory(Company::class)->create(['name' => 'foo']);
 
-        $this->schema .= '
+        $this->schema .= /** @lang GraphQL */ '
         type Company {
             id: ID!
             name: String!
@@ -73,7 +74,7 @@ class UpdateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         mutation {
             updateCompany(input: {
                 id: 1
@@ -92,14 +93,35 @@ class UpdateDirectiveTest extends DBTestCase
             ],
         ]);
 
-        $this->assertSame('bar', Company::first()->name);
+        $this->assertSame('bar', Company::firstOrFail()->name);
     }
 
-    public function testCanUpdateWithCustomPrimaryKey(): void
+    public function testThrowsWhenMissingPrimaryKey(): void
+    {
+        $this->schema .= /** @lang GraphQL */ '
+        type Company {
+            id: ID!
+        }
+
+        type Mutation {
+            updateCompany: Company @update
+        }
+        ';
+
+        $this->graphQL(/** @lang GraphQL */ '
+        mutation {
+            updateCompany {
+                id
+            }
+        }
+        ')->assertGraphQLErrorMessage(UpdateModel::MISSING_PRIMARY_KEY_FOR_UPDATE);
+    }
+
+    public function testUpdateWithCustomPrimaryKey(): void
     {
         factory(Category::class)->create(['name' => 'foo']);
 
-        $this->schema .= '
+        $this->schema .= /** @lang GraphQL */ '
         type Category {
             category_id: ID!
             name: String!
@@ -113,7 +135,7 @@ class UpdateDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         mutation {
             updateCategory(
                 category_id: 1
@@ -132,7 +154,47 @@ class UpdateDirectiveTest extends DBTestCase
             ],
         ]);
 
-        $this->assertSame('bar', Category::first()->name);
+        $this->assertSame('bar', Category::firstOrFail()->name);
+    }
+
+    public function testUpdateWithCustomPrimaryKeyAsId(): void
+    {
+        factory(Category::class)->create(['name' => 'foo']);
+
+        $this->schema .= /** @lang GraphQL */ '
+        type Category {
+            id: ID! @rename(attribute: "category_id")
+            name: String!
+        }
+
+        type Mutation {
+            updateCategory(
+                id: ID!
+                name: String
+            ): Category @update
+        }
+        ';
+
+        $this->graphQL(/** @lang GraphQL */ '
+        mutation {
+            updateCategory(
+                id: 1
+                name: "bar"
+            ) {
+                id
+                name
+            }
+        }
+        ')->assertJson([
+            'data' => [
+                'updateCategory' => [
+                    'id' => '1',
+                    'name' => 'bar',
+                ],
+            ],
+        ]);
+
+        $this->assertSame('bar', Category::firstOrFail()->name);
     }
 
     public function testDoesNotUpdateWithFailingRelationship(): void
@@ -192,7 +254,7 @@ class UpdateDirectiveTest extends DBTestCase
         }
         ');
 
-        $this->assertSame('Original', User::first()->name);
+        $this->assertSame('Original', User::firstOrFail()->name);
     }
 
     public function testNestedArgResolver(): void
@@ -206,23 +268,23 @@ class UpdateDirectiveTest extends DBTestCase
         type Mutation {
             updateUser(input: UpdateUserInput! @spread): User @update
         }
-        
+
         type Task {
             id: Int
             name: String!
         }
-        
+
         type User {
             name: String
             tasks: [Task!]! @hasMany
         }
-        
+
         input UpdateUserInput {
             id: Int
             name: String
             updateTask: UpdateTaskInput @update(relation: "tasks")
         }
-        
+
         input UpdateTaskInput {
             id: Int
             name: String
@@ -254,6 +316,84 @@ class UpdateDirectiveTest extends DBTestCase
                         [
                             'id' => 3,
                             'name' => 'Uniq',
+                        ],
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    public function testNestedUpdateOnInputList(): void
+    {
+        factory(User::class)->create();
+        factory(Task::class)->create([
+            'id' => 3,
+        ]);
+        factory(Task::class)->create([
+            'id' => 4,
+        ]);
+
+        $this->schema .= /** @lang GraphQL */ '
+        type Mutation {
+            updateUser(input: UpdateUserInput! @spread): User @update
+        }
+
+        type Task {
+            id: Int
+            name: String!
+        }
+
+        type User {
+            name: String
+            tasks: [Task!]! @hasMany
+        }
+
+        input UpdateUserInput {
+            id: Int
+            name: String
+            updateTask: [UpdateTaskInput] @update(relation: "tasks")
+        }
+
+        input UpdateTaskInput {
+            id: Int
+            name: String
+        }
+        ';
+
+        $this->graphQL(/** @lang GraphQL */ '
+        mutation {
+            updateUser(input: {
+                id: 1
+                name: "foo"
+                updateTask: [
+                    {
+                        id: 3
+                        name: "Uniq"
+                    },
+                    {
+                        id: 4,
+                        name: "Foo"
+                    }
+                ]
+            }) {
+                name
+                tasks {
+                    id
+                    name
+                }
+            }
+        }
+        ')->assertJson([
+            'data' => [
+                'updateUser' => [
+                    'name' => 'foo',
+                    'tasks' => [
+                        [
+                            'id' => 3,
+                            'name' => 'Uniq',
+                        ], [
+                            'id' => 4,
+                            'name' => 'Foo',
                         ],
                     ],
                 ],

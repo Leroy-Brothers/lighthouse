@@ -3,16 +3,20 @@
 namespace Nuwave\Lighthouse\Subscriptions;
 
 use GraphQL\Language\AST\FieldNode;
-use GraphQL\Language\AST\Node;
 use GraphQL\Language\AST\OperationDefinitionNode;
-use Illuminate\Support\Arr;
+use GraphQL\Type\Definition\ObjectType;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Support\Collection;
+use Nuwave\Lighthouse\Events\BuildExtensionsResponse;
 use Nuwave\Lighthouse\Events\StartExecution;
+use Nuwave\Lighthouse\Exceptions\DefinitionException;
 use Nuwave\Lighthouse\Execution\ExtensionsResponse;
-use Nuwave\Lighthouse\GraphQL;
+use Nuwave\Lighthouse\Schema\SchemaBuilder;
 use Nuwave\Lighthouse\Schema\Types\GraphQLSubscription;
 use Nuwave\Lighthouse\Schema\Types\NotFoundSubscription;
 use Nuwave\Lighthouse\Subscriptions\Contracts\ContextSerializer;
+use Nuwave\Lighthouse\Subscriptions\Contracts\StoresSubscriptions;
+use Nuwave\Lighthouse\Support\Utils;
 
 class SubscriptionRegistry
 {
@@ -22,48 +26,44 @@ class SubscriptionRegistry
     protected $serializer;
 
     /**
-     * @var \Nuwave\Lighthouse\Subscriptions\StorageManager
+     * @var \Nuwave\Lighthouse\Subscriptions\Contracts\StoresSubscriptions
      */
     protected $storage;
 
     /**
-     * @var \Nuwave\Lighthouse\GraphQL
+     * @var \Nuwave\Lighthouse\Schema\SchemaBuilder
      */
-    protected $graphQL;
+    protected $schemaBuilder;
+
+    /**
+     * @var \Illuminate\Contracts\Config\Repository
+     */
+    protected $configRepository;
 
     /**
      * A map from operation names to channel names.
      *
-     * @var string[]
+     * @var array<string, string>
      */
     protected $subscribers = [];
 
     /**
      * Active subscription fields of the schema.
      *
-     * @var \Nuwave\Lighthouse\Schema\Types\GraphQLSubscription[]
+     * @var array<string, \Nuwave\Lighthouse\Schema\Types\GraphQLSubscription>
      */
     protected $subscriptions = [];
 
-    /**
-     * @param  \Nuwave\Lighthouse\Subscriptions\Contracts\ContextSerializer  $serializer
-     * @param  \Nuwave\Lighthouse\Subscriptions\StorageManager  $storage
-     * @param  \Nuwave\Lighthouse\GraphQL  $graphQL
-     * @return void
-     */
-    public function __construct(ContextSerializer $serializer, StorageManager $storage, GraphQL $graphQL)
+    public function __construct(ContextSerializer $serializer, StoresSubscriptions $storage, SchemaBuilder $schemaBuilder, ConfigRepository $configRepository)
     {
         $this->serializer = $serializer;
         $this->storage = $storage;
-        $this->graphQL = $graphQL;
+        $this->schemaBuilder = $schemaBuilder;
+        $this->configRepository = $configRepository;
     }
 
     /**
      * Add subscription to registry.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\Types\GraphQLSubscription  $subscription
-     * @param  string  $field
-     * @return $this
      */
     public function register(GraphQLSubscription $subscription, string $field): self
     {
@@ -74,50 +74,54 @@ class SubscriptionRegistry
 
     /**
      * Check if subscription is registered.
-     *
-     * @param  string  $key
-     * @return bool
      */
     public function has(string $key): bool
     {
-        return isset($this->subscriptions[$key]);
+        if (isset($this->subscriptions[$key])) {
+            return true;
+        }
+
+        return $this->subscriptionType()->hasField($key);
     }
 
     /**
      * Get subscription keys.
      *
-     * @return string[]
+     * @return array<string>
+     *
+     * @deprecated Use the `GraphQL\Type\Schema::subscriptionType()->getFieldNames()` method directly.
      */
     public function keys(): array
     {
-        return array_keys($this->subscriptions);
+        return $this->subscriptionType()->getFieldNames();
     }
 
     /**
      * Get instance of subscription.
-     *
-     * @param  string  $key
-     * @return \Nuwave\Lighthouse\Schema\Types\GraphQLSubscription
      */
     public function subscription(string $key): GraphQLSubscription
     {
+        if (! isset($this->subscriptions[$key])) {
+            /**
+             * Loading the field has the side effect of triggering a call to.
+             * @see \Nuwave\Lighthouse\Support\Contracts\ProvidesSubscriptionResolver::provideSubscriptionResolver()
+             * which is then expected to call @see register().
+             *
+             * TODO make this more explicit and safe
+             */
+            $this->subscriptionType()->getField($key);
+        }
+
         return $this->subscriptions[$key];
     }
 
     /**
      * Add subscription to registry.
-     *
-     * @param  \Nuwave\Lighthouse\Subscriptions\Subscriber  $subscriber
-     * @param  string  $channel
-     * @return $this
      */
-    public function subscriber(Subscriber $subscriber, string $channel): self
+    public function subscriber(Subscriber $subscriber, string $topic): self
     {
-        if ($subscriber->channel) {
-            $this->storage->storeSubscriber($subscriber, $channel);
-        }
-
-        $this->subscribers[$subscriber->operationName] = $subscriber->channel;
+        $this->storage->storeSubscriber($subscriber, $topic);
+        $this->subscribers[$subscriber->fieldName] = $subscriber->channel;
 
         return $this;
     }
@@ -125,19 +129,14 @@ class SubscriptionRegistry
     /**
      * Get registered subscriptions.
      *
-     * @param  \Nuwave\Lighthouse\Subscriptions\Subscriber  $subscriber
-     * @return \Illuminate\Support\Collection
+     * @return \Illuminate\Support\Collection<\Nuwave\Lighthouse\Schema\Types\GraphQLSubscription>
      */
     public function subscriptions(Subscriber $subscriber): Collection
     {
-        // A subscription can be fired without a request so we must make
-        // sure the schema has been generated.
-        $this->graphQL->prepSchema();
-
         return (new Collection($subscriber->query->definitions))
-            ->filter(function (Node $node): bool {
-                return $node instanceof OperationDefinitionNode;
-            })
+            ->filter(
+                Utils::instanceofMatcher(OperationDefinitionNode::class)
+            )
             ->filter(function (OperationDefinitionNode $node): bool {
                 return $node->operation === 'subscription';
             })
@@ -148,39 +147,65 @@ class SubscriptionRegistry
                     })
                     ->all();
             })
-            ->map(function ($subscriptionField): GraphQLSubscription {
-                return Arr::get(
-                    $this->subscriptions,
-                    $subscriptionField,
-                    new NotFoundSubscription
-                );
+            ->map(function (string $subscriptionField): GraphQLSubscription {
+                if ($this->has($subscriptionField)) {
+                    return $this->subscription($subscriptionField);
+                }
+
+                return new NotFoundSubscription;
             });
     }
 
     /**
      * Reset the collection of subscribers when a new execution starts.
-     *
-     * @param  \Nuwave\Lighthouse\Events\StartExecution  $startExecution
-     * @return void
      */
     public function handleStartExecution(StartExecution $startExecution): void
     {
         $this->subscribers = [];
     }
 
-    /**
-     * Get all current subscribers.
-     *
-     * @return \Nuwave\Lighthouse\Execution\ExtensionsResponse
-     */
-    public function handleBuildExtensionsResponse(): ExtensionsResponse
+    public function handleBuildExtensionsResponse(BuildExtensionsResponse $buildExtensionsResponse): ?ExtensionsResponse
     {
-        return new ExtensionsResponse(
-            'lighthouse_subscriptions',
-            [
-                'version' => 1,
-                'channels' => $this->subscribers,
-            ]
-        );
+        $subscriptionsConfig = $this->configRepository->get('lighthouse.subscriptions');
+
+        $channel = count($this->subscribers) > 0
+            ? reset($this->subscribers)
+            : null;
+
+        if ($channel === null && ($subscriptionsConfig['exclude_empty'] ?? false)) {
+            return null;
+        }
+
+        $version = $subscriptionsConfig['version'] ?? 1;
+        switch ((int) $version) {
+            case 1:
+                $content = [
+                    'version' => 1,
+                    'channel' => $channel,
+                    'channels' => $this->subscribers,
+                ];
+                break;
+            case 2:
+                $content = [
+                    'version' => 2,
+                    'channel' => $channel,
+                ];
+                break;
+            default:
+                throw new DefinitionException("Expected lighthouse.subscriptions.version to be 1 or 2, got: {$version}");
+        }
+
+        return new ExtensionsResponse('lighthouse_subscriptions', $content);
+    }
+
+    protected function subscriptionType(): ObjectType
+    {
+        $subscriptionType = $this->schemaBuilder->schema()->getSubscriptionType();
+
+        if ($subscriptionType === null) {
+            throw new DefinitionException('Schema is missing subscription root type.');
+        }
+
+        return $subscriptionType;
     }
 }

@@ -1,7 +1,7 @@
 # Arg Resolvers
 
 To understand the concept behind arg resolvers, you should familiarize yourself with
-[how field resolvers are composed](https://graphql.org/learn/execution/).
+[how field resolvers are composed](https://graphql.org/learn/execution).
 
 ## Motivation
 
@@ -47,13 +47,8 @@ mutation CreateTaskWithNotes {
     id: 45
     name: "Do something"
     notes: [
-      {
-        content: "Foo bar",
-        link: "http://foo.bar"
-      },
-      {
-        content: "Awesome note"
-      }
+      { content: "Foo bar", link: "https://foo.bar" }
+      { content: "Awesome note" }
     ]
   ) {
     id
@@ -131,7 +126,7 @@ input CreateNoteInput {
 }
 ```
 
-The `@create` directive will behave differently, based on the context where it is used.
+The [@create](../api-reference/directives.md#create) directive will behave differently, based on the context where it is used.
 
 On the `createTask` field, it will create a `Task` model with the given `name`, save it
 to the database and return that instance to Lighthouse.
@@ -151,7 +146,7 @@ use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 
 class CreateDirective extends BaseDirective implements FieldResolver
 {
-    public function resolveField(FieldValue $fieldValue)
+    public function resolveField(FieldValue $fieldValue): FieldValue
     {
         return $fieldValue->setResolver(
             function ($root, array $args, GraphQLContext $context, ResolveInfo $resolveInfo): Model {
@@ -176,30 +171,27 @@ The arguments that are nested within `notes` will be handled as a nested argumen
 For each `CreateNoteInput`, the resolver will be called with the previously created `Task`
 and create and attach a related `Note` model.
 
-We can extend our previous implementation of `@create` by allowing it to be used as an `ArgResolver`:
+We can extend our previous implementation of [@create](../api-reference/directives.md#create) by allowing it to be used as an `ArgResolver`:
 
 ```php
 <?php
 
 namespace Nuwave\Lighthouse\Schema\Directives;
 
-use Illuminate\Database\Eloquent\Model;
-use Nuwave\Lighthouse\Execution\Arguments\ResolveNested;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
 use Nuwave\Lighthouse\Support\Contracts\ArgResolver;
 use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
-use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 
 class CreateDirective extends BaseDirective implements FieldResolver, ArgResolver
 {
-    public function resolveField(FieldValue $fieldValue) { ... }
+    public function resolveField(FieldValue $fieldValue): FieldValue { ... }
 
     /**
      * @param  \Illuminate\Database\Eloquent\Model  $parent
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet[]  $argsList
-     * @return \Illuminate\Database\Eloquent\Model[]
+     * @param  array<\Nuwave\Lighthouse\Execution\Arguments\ArgumentSet>  $argsList
+     * @return array<\Illuminate\Database\Eloquent\Model>
      */
-    public function __invoke($parent, $argsList)
+    public function __invoke($parent, $argsList): array
     {
         $relationName = $this->getRelationName();
 

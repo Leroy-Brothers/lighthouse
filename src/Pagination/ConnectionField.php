@@ -12,58 +12,59 @@ class ConnectionField
     /**
      * Resolve page info for connection.
      *
-     * @param  \Illuminate\Contracts\Pagination\LengthAwarePaginator  $paginator
-     * @return array
+     * @return array<string, mixed>
      */
     public function pageInfoResolver(LengthAwarePaginator $paginator): array
     {
+        /** @var int|null $firstItem Laravel type-hints are inaccurate here */
+        $firstItem = $paginator->firstItem();
+        /** @var int|null $lastItem Laravel type-hints are inaccurate here */
+        $lastItem = $paginator->lastItem();
+
         return [
+            'hasNextPage' => $paginator->hasMorePages(),
+            'hasPreviousPage' => $paginator->currentPage() > 1,
+            'startCursor' => $firstItem !== null
+                ? Cursor::encode($firstItem)
+                : null,
+            'endCursor' => $lastItem !== null
+                ? Cursor::encode($lastItem)
+                : null,
             'total' => $paginator->total(),
             'count' => $paginator->count(),
             'currentPage' => $paginator->currentPage(),
             'lastPage' => $paginator->lastPage(),
-            'hasNextPage' => $paginator->hasMorePages(),
-            'hasPreviousPage' => $paginator->currentPage() > 1,
-            'startCursor' => $paginator->firstItem()
-                ? Cursor::encode($paginator->firstItem())
-                : null,
-            'endCursor' => $paginator->lastItem()
-                ? Cursor::encode($paginator->lastItem())
-                : null,
         ];
     }
 
     /**
      * Resolve edges for connection.
      *
-     * @param  \Illuminate\Pagination\LengthAwarePaginator  $paginator
-     * @param  array  $args
-     * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
-     * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
-     * @return \Illuminate\Support\Collection
+     * @param  \Illuminate\Pagination\LengthAwarePaginator<mixed>  $paginator
+     * @param  array<string, mixed>  $args
      */
-    public function edgeResolver(LengthAwarePaginator $paginator, $args, GraphQLContext $context, ResolveInfo $resolveInfo): Collection
+    public function edgeResolver(LengthAwarePaginator $paginator, array $args, GraphQLContext $context, ResolveInfo $resolveInfo): Collection
     {
-        // We know this must be a list, as it is constructed this way during schema manipulation
-        /** @var \GraphQL\Type\Definition\ListOfType $listOfType */
-        $listOfType = $resolveInfo->returnType;
-
-        // We also know this is one of those two return types
+        // We know those types because we manipulated them during PaginationManipulator
+        /** @var \GraphQL\Type\Definition\NonNull $nonNullList */
+        $nonNullList = $resolveInfo->returnType;
         /** @var \GraphQL\Type\Definition\ObjectType|\GraphQL\Type\Definition\InterfaceType $objectLikeType */
-        $objectLikeType = $listOfType->ofType;
+        $objectLikeType = $nonNullList->getWrappedType(true);
+
         $returnTypeFields = $objectLikeType->getFields();
 
+        /** @var int|null $firstItem Laravel type-hints are inaccurate here */
         $firstItem = $paginator->firstItem();
 
         return $paginator
             ->values()
-            ->map(function ($item, $index) use ($returnTypeFields, $firstItem): array {
+            ->map(function ($item, int $index) use ($returnTypeFields, $firstItem): array {
                 $data = [];
 
                 foreach ($returnTypeFields as $field) {
                     switch ($field->name) {
                         case 'cursor':
-                            $data['cursor'] = Cursor::encode($firstItem + $index);
+                            $data['cursor'] = Cursor::encode((int) $firstItem + $index);
                             break;
 
                         case 'node':

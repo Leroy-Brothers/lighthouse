@@ -7,9 +7,8 @@ use Illuminate\Http\Request;
 interface AuthorizesSubscriptions
 {
     /**
-     * Authorize subscription request.
+     * Is the subscription request authorized?
      *
-     * @param  \Illuminate\Http\Request  $request
      * @return bool
      */
     public function authorize(Request $request);

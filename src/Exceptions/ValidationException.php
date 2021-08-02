@@ -2,36 +2,62 @@
 
 namespace Nuwave\Lighthouse\Exceptions;
 
-class ValidationException extends \Illuminate\Validation\ValidationException implements RendersErrorsExtensions
+use Exception;
+use Illuminate\Contracts\Validation\Validator;
+use Illuminate\Validation\ValidationException as LaravelValidationException;
+
+class ValidationException extends Exception implements RendersErrorsExtensions
 {
+    const CATEGORY = 'validation';
+
     /**
-     * Returns true when exception message is safe to be displayed to a client.
-     *
-     * @return bool
+     * @var \Illuminate\Contracts\Validation\Validator
      */
-    public function isClientSafe()
+    protected $validator;
+
+    public function __construct(string $message, Validator $validator)
+    {
+        parent::__construct($message);
+
+        $this->validator = $validator;
+    }
+
+    public static function fromLaravel(LaravelValidationException $laravelException): self
+    {
+        return new static(
+            $laravelException->getMessage(),
+            $laravelException->validator
+        );
+    }
+
+    /**
+     * Instantiate from a plain array of messages.
+     *
+     * @see \Illuminate\Validation\ValidationException::withMessages()
+     *
+     * @param  array<string, string|array<string>>  $messages
+     */
+    public static function withMessages(array $messages): self
+    {
+        return static::fromLaravel(
+            LaravelValidationException::withMessages($messages)
+        );
+    }
+
+    public function isClientSafe(): bool
     {
         return true;
     }
 
-    /**
-     * Returns string describing a category of the error.
-     *
-     * @return string
-     */
-    public function getCategory()
+    public function getCategory(): string
     {
-        return 'validation';
+        return self::CATEGORY;
     }
 
-    /**
-     * Return the content that is put in the "extensions" part
-     * of the returned error.
-     *
-     * @return array
-     */
     public function extensionsContent(): array
     {
-        return ['validation' => $this->errors()];
+        return [
+            self::CATEGORY => $this->validator->errors()->messages(),
+        ];
     }
 }

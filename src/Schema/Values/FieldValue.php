@@ -3,10 +3,14 @@
 namespace Nuwave\Lighthouse\Schema\Values;
 
 use Closure;
+use GraphQL\Deferred;
 use GraphQL\Language\AST\FieldDefinitionNode;
 use GraphQL\Language\AST\StringValueNode;
+use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Type\Definition\Type;
 use Nuwave\Lighthouse\Schema\ExecutableTypeNodeConverter;
+use Nuwave\Lighthouse\Schema\RootType;
+use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 use Nuwave\Lighthouse\Support\Contracts\ProvidesResolver;
 use Nuwave\Lighthouse\Support\Contracts\ProvidesSubscriptionResolver;
 
@@ -36,31 +40,19 @@ class FieldValue
     /**
      * The actual field resolver.
      *
-     * @var callable|null
+     * Lazily initialized through setResolver().
+     *
+     * @var callable
      */
     protected $resolver;
 
     /**
-     * Text describing by this field is deprecated.
-     *
-     * @var string|null
-     */
-    protected $deprecationReason = null;
-
-    /**
      * A closure that determines the complexity of executing the field.
      *
-     * @var \Closure
+     * @var \Closure|null
      */
     protected $complexity;
 
-    /**
-     * Create new field value instance.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\Values\TypeValue  $parent
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $field
-     * @return void
-     */
     public function __construct(TypeValue $parent, FieldDefinitionNode $field)
     {
         $this->parent = $parent;
@@ -69,9 +61,6 @@ class FieldValue
 
     /**
      * Overwrite the current/default resolver.
-     *
-     * @param  callable  $resolver
-     * @return $this
      */
     public function setResolver(callable $resolver): self
     {
@@ -82,12 +71,10 @@ class FieldValue
 
     /**
      * Use the default resolver.
-     *
-     * @return $this
      */
     public function useDefaultResolver(): self
     {
-        $this->resolver = $this->getParentName() === 'Subscription'
+        $this->resolver = $this->getParentName() === RootType::SUBSCRIPTION
             ? app(ProvidesSubscriptionResolver::class)->provideSubscriptionResolver($this)
             : app(ProvidesResolver::class)->provideResolver($this);
 
@@ -96,9 +83,6 @@ class FieldValue
 
     /**
      * Define a closure that is used to determine the complexity of the field.
-     *
-     * @param  \Closure  $complexity
-     * @return $this
      */
     public function setComplexity(Closure $complexity): self
     {
@@ -108,26 +92,11 @@ class FieldValue
     }
 
     /**
-     * Set deprecation reason for field.
-     *
-     * @param  string  $deprecationReason
-     * @return $this
-     */
-    public function setDeprecationReason(string $deprecationReason): self
-    {
-        $this->deprecationReason = $deprecationReason;
-
-        return $this;
-    }
-
-    /**
      * Get an instance of the return type of the field.
-     *
-     * @return \GraphQL\Type\Definition\Type
      */
     public function getReturnType(): Type
     {
-        if (! isset($this->returnType)) {
+        if ($this->returnType === null) {
             /** @var \Nuwave\Lighthouse\Schema\ExecutableTypeNodeConverter $typeNodeConverter */
             $typeNodeConverter = app(ExecutableTypeNodeConverter::class);
             $this->returnType = $typeNodeConverter->convert($this->field->type);
@@ -136,17 +105,11 @@ class FieldValue
         return $this->returnType;
     }
 
-    /**
-     * @return \Nuwave\Lighthouse\Schema\Values\TypeValue
-     */
     public function getParent(): TypeValue
     {
         return $this->parent;
     }
 
-    /**
-     * @return string
-     */
     public function getParentName(): string
     {
         return $this->getParent()->getTypeDefinitionName();
@@ -154,8 +117,6 @@ class FieldValue
 
     /**
      * Get the underlying AST definition for the field.
-     *
-     * @return \GraphQL\Language\AST\FieldDefinitionNode
      */
     public function getField(): FieldDefinitionNode
     {
@@ -164,10 +125,8 @@ class FieldValue
 
     /**
      * Get field resolver.
-     *
-     * @return callable|null
      */
-    public function getResolver(): ?callable
+    public function getResolver(): callable
     {
         return $this->resolver;
     }
@@ -175,25 +134,22 @@ class FieldValue
     /**
      * Return the namespaces configured for the parent type.
      *
-     * @return string[]
+     * @return array<string>
      */
     public function defaultNamespacesForParent(): array
     {
         switch ($this->getParentName()) {
-            case 'Query':
+            case RootType::QUERY:
                 return (array) config('lighthouse.namespaces.queries');
-            case 'Mutation':
+            case RootType::MUTATION:
                 return (array) config('lighthouse.namespaces.mutations');
-            case 'Subscription':
+            case RootType::SUBSCRIPTION:
                 return (array) config('lighthouse.namespaces.subscriptions');
             default:
                return [];
         }
     }
 
-    /**
-     * @return \GraphQL\Language\AST\StringValueNode|null
-     */
     public function getDescription(): ?StringValueNode
     {
         return $this->field->description;
@@ -201,40 +157,65 @@ class FieldValue
 
     /**
      * Get current complexity.
-     *
-     * @return \Closure|null
      */
     public function getComplexity(): ?Closure
     {
         return $this->complexity;
     }
 
-    /**
-     * @return string
-     */
     public function getFieldName(): string
     {
         return $this->field->name->value;
     }
 
     /**
-     * @return string|null
-     */
-    public function getDeprecationReason(): ?string
-    {
-        return $this->deprecationReason;
-    }
-
-    /**
      * Is the parent of this field one of the root types?
-     *
-     * @return bool
      */
     public function parentIsRootType(): bool
     {
-        return in_array(
-            $this->getParentName(),
-            ['Query', 'Mutation', 'Subscription']
-        );
+        return RootType::isRootType($this->getParentName());
+    }
+
+    /**
+     * Register a function that will receive the final result and resolver arguments.
+     *
+     * For example, the following handler tries to double the result.
+     * This is somewhat non-sensical, but shows the range of what you can do.
+     *
+     * function ($result, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) {
+     *     if (is_numeric($result)) {
+     *         // A common use-case is to transform the result
+     *         $result = $result * 2;
+     *     }
+     *
+     *     // You can also filter results conditionally
+     *     if ($result === 42) {
+     *          return null;
+     *     }
+     *
+     *     // You can also run side-effects
+     *     Log::debug("Doubled to {$result}.");
+     *
+     *     // Don't forget to return something
+     *     return $result;
+     * }
+     *
+     * @param callable(mixed $result, array<string, mixed> $args, GraphQLContext $context, ResolveInfo $resolveInfo): mixed $handle
+     */
+    public function resultHandler(callable $handle): void
+    {
+        $previousResolver = $this->resolver;
+
+        $this->resolver = function ($root, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) use ($previousResolver, $handle) {
+            $resolved = $previousResolver($root, $args, $context, $resolveInfo);
+
+            if ($resolved instanceof Deferred) {
+                return $resolved->then(static function ($result) use ($handle, $args, $context, $resolveInfo) {
+                    return $handle($result, $args, $context, $resolveInfo);
+                });
+            }
+
+            return $handle($resolved, $args, $context, $resolveInfo);
+        };
     }
 }

@@ -13,9 +13,6 @@ class Upload extends ScalarType
     /**
      * This always throws, as the Upload scalar can only be used as an argument.
      *
-     * @param  mixed  $value
-     * @return void
-     *
      * @throws \GraphQL\Error\InvariantViolation
      */
     public function serialize($value): void
@@ -27,9 +24,6 @@ class Upload extends ScalarType
 
     /**
      * Parse a externally provided variable value into a Carbon instance.
-     *
-     * @param  mixed  $value
-     * @return \Illuminate\Http\UploadedFile
      *
      * @throws \GraphQL\Error\Error
      */
@@ -48,8 +42,7 @@ class Upload extends ScalarType
      * This always throws, as the Upload scalar must be used with a multipart form request.
      *
      * @param  \GraphQL\Language\AST\Node  $valueNode
-     * @param  mixed[]|null  $variables
-     * @return void
+     * @param  array<string, mixed>|null  $variables
      *
      * @throws \GraphQL\Error\Error
      */

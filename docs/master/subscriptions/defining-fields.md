@@ -4,7 +4,7 @@ Define your subscriptions as field on the root `Subscription` type in your schem
 
 ```graphql
 type Subscription {
-    postUpdated(author: ID): Post
+  postUpdated(author: ID): Post
 }
 ```
 
@@ -77,11 +77,8 @@ class PostUpdated extends GraphQLSubscription
      */
     public function encodeTopic(Subscriber $subscriber, string $fieldName): string
     {
-        // Optionally create a unique topic name based on the
-        // `author` argument.
-        $args = $subscriber->args;
-
-        return Str::snake($fieldName).':'.$args['author'];
+        // Create a unique topic name based on the `author` argument
+        return Str::snake($fieldName).':'.$subscriber->args['author'];
     }
 
     /**
@@ -103,7 +100,7 @@ class PostUpdated extends GraphQLSubscription
      * Resolve the subscription.
      *
      * @param  \App\Post  $root
-     * @param  mixed[]  $args
+     * @param  array<string, mixed>  $args
      * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
      * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
      * @return mixed
@@ -120,5 +117,5 @@ class PostUpdated extends GraphQLSubscription
 ```
 
 If the default namespaces are not working with your application structure
-or you want to be more explicit, you can use the [`@subscription`](../api-reference/directives.md#subscription)
+or you want to be more explicit, you can use the [@subscription](../api-reference/directives.md#subscription)
 directive to point to a different class.

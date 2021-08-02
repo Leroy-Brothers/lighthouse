@@ -31,7 +31,7 @@ class MorphToDirectiveTest extends DBTestCase
      */
     protected $image;
 
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -39,16 +39,17 @@ class MorphToDirectiveTest extends DBTestCase
         $this->task = factory(Task::class)->create([
             'user_id' => $this->user->id,
         ]);
-        $this->image = $this->task->images()->save(factory(Image::class)->create());
+        $this->image = $this->task->images()
+            ->save(
+                factory(Image::class)->create()
+            );
     }
 
-    public function testCanResolveMorphToRelationship(): void
+    public function testResolveMorphToRelationship(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type Image {
             id: ID!
-            from: String
-            to: String
             imageable: Task! @morphTo(relation: "imageable")
         }
 
@@ -68,8 +69,6 @@ class MorphToDirectiveTest extends DBTestCase
         query ($id: ID!) {
             image(id: $id) {
                 id
-                from
-                to
                 imageable {
                     id
                     name
@@ -82,8 +81,6 @@ class MorphToDirectiveTest extends DBTestCase
             'data' => [
                 'image' => [
                     'id' => $this->image->id,
-                    'from' => $this->image->from,
-                    'to' => $this->image->to,
                     'imageable' => [
                         'id' => $this->task->id,
                         'name' => $this->task->name,
@@ -93,13 +90,11 @@ class MorphToDirectiveTest extends DBTestCase
         ]);
     }
 
-    public function testCanResolveMorphToWithCustomName(): void
+    public function testResolveMorphToWithCustomName(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type Image {
             id: ID!
-            from: String
-            to: String
             customImageable: Task! @morphTo(relation: "imageable")
         }
 
@@ -119,8 +114,6 @@ class MorphToDirectiveTest extends DBTestCase
         query ($id: ID!) {
             image(id: $id) {
                 id
-                from
-                to
                 customImageable {
                     id
                     name
@@ -133,8 +126,6 @@ class MorphToDirectiveTest extends DBTestCase
             'data' => [
                 'image' => [
                     'id' => $this->image->id,
-                    'from' => $this->image->from,
-                    'to' => $this->image->to,
                     'customImageable' => [
                         'id' => $this->task->id,
                         'name' => $this->task->name,
@@ -144,11 +135,13 @@ class MorphToDirectiveTest extends DBTestCase
         ]);
     }
 
-    public function testCanResolveMorphToUsingInterfaces(): void
+    public function testResolveMorphToUsingInterfaces(): void
     {
+        /** @var \Tests\Utils\Models\Post $post */
         $post = factory(Post::class)->create([
             'user_id' => $this->user->id,
         ]);
+        /** @var \Tests\Utils\Models\Image $postImage */
         $postImage = $post->images()->save(
             factory(Image::class)->create()
         );
@@ -170,8 +163,6 @@ class MorphToDirectiveTest extends DBTestCase
 
         type Image {
             id: ID!
-            from: String
-            to: String
             imageable: Imageable! @morphTo
         }
 
@@ -186,8 +177,6 @@ class MorphToDirectiveTest extends DBTestCase
         query ($taskImage: ID!, $postImage: ID!){
             taskImage: image(id: $taskImage) {
                 id
-                from
-                to
                 imageable {
                     ... on Task {
                         id
@@ -201,8 +190,6 @@ class MorphToDirectiveTest extends DBTestCase
             }
             postImage: image(id: $postImage) {
                 id
-                from
-                to
                 imageable {
                     ... on Task {
                         id
@@ -222,8 +209,6 @@ class MorphToDirectiveTest extends DBTestCase
             'data' => [
                 'taskImage' => [
                     'id' => $this->image->id,
-                    'from' => $this->image->from,
-                    'to' => $this->image->to,
                     'imageable' => [
                         'id' => $this->task->id,
                         'name' => $this->task->name,
@@ -231,8 +216,6 @@ class MorphToDirectiveTest extends DBTestCase
                 ],
                 'postImage' => [
                     'id' => $postImage->id,
-                    'from' => $postImage->from,
-                    'to' => $postImage->to,
                     'imageable' => [
                         'id' => $post->id,
                         'title' => $post->title,

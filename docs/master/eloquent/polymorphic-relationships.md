@@ -11,36 +11,36 @@ Let's start off with the plain type definitions, without any relations.
 
 ```graphql
 type Post {
-    id: ID!
-    name: String!
+  id: ID!
+  name: String!
 }
 
 type User {
-    id: ID!
-    name: String!
+  id: ID!
+  name: String!
 }
 
 type Image {
-    id: ID!
-    url: String!
+  id: ID!
+  url: String!
 }
 ```
 
 First, let's go ahead and add the relations to `Image` since they are straightforward.
 The field name should match your relationship method name and be annotated
-with the [`@morphOne`](../api-reference/directives.md#morphone) directive.
+with the [@morphOne](../api-reference/directives.md#morphone) directive.
 
 ```graphql
 type Post {
-    id: ID!
-    name: String!
-    image: Image! @morphOne
+  id: ID!
+  name: String!
+  image: Image! @morphOne
 }
 
 type User {
-    id: ID!
-    name: String!
-    image: Image @morphOne
+  id: ID!
+  name: String!
+  image: Image @morphOne
 }
 ```
 
@@ -56,14 +56,14 @@ union Imageable = Post | User
 ```
 
 Now, reference the union type from a field in your `Image` type.
-You can use the [`@morphTo`](../api-reference/directives.md#morphto) directive
+You can use the [@morphTo](../api-reference/directives.md#morphto) directive
 for performance optimization.
 
 ```graphql
 type Image {
-    id: ID!
-    url: String!
-    imageable: Imageable! @morphTo
+  id: ID!
+  url: String!
+  imageable: Imageable! @morphTo
 }
 ```
 
@@ -75,19 +75,19 @@ when dealing with Eloquent models, so your definition should just work.
 Based on the above example, you could change your application to allow
 for a `Post` to have many images attached to it.
 The field `images` now returns a list of `Image` object and is annotated
-with the [`@morphMany`](../api-reference/directives.md#morphmany) directive.
+with the [@morphMany](../api-reference/directives.md#morphmany) directive.
 
 ```graphql
 type Post {
-    id: ID!
-    name: String!
-    images: [Image]! @morphMany
+  id: ID!
+  name: String!
+  images: [Image]! @morphMany
 }
 
 type Image {
-    id: ID!
-    url: String!
-    imageable: Imageable! @morphTo
+  id: ID!
+  url: String!
+  imageable: Imageable! @morphTo
 }
 
 union Imageable = Post | User

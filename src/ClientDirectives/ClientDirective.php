@@ -7,12 +7,13 @@ use GraphQL\Type\Definition\Directive;
 use GraphQL\Type\Definition\ResolveInfo;
 use Nuwave\Lighthouse\Exceptions\DefinitionException;
 use Nuwave\Lighthouse\GraphQL;
+use Nuwave\Lighthouse\Schema\SchemaBuilder;
 
 /**
  * Provides information about where client directives
  * were placed in the query and what arguments were given to them.
  *
- * TODO implement accessors for other locations http://spec.graphql.org/draft/#ExecutableDirectiveLocation
+ * TODO implement accessors for other locations https://spec.graphql.org/draft/#ExecutableDirectiveLocation
  */
 class ClientDirective
 {
@@ -24,7 +25,7 @@ class ClientDirective
     /**
      * @var \GraphQL\Type\Definition\Directive|null
      */
-    private $definition;
+    protected $definition;
 
     public function __construct(string $name)
     {
@@ -41,7 +42,6 @@ class ClientDirective
      * - When the directive is present but has no arguments: []
      * - When the directive is present with arguments: an associative array
      *
-     * @param  string  $clientDirectiveName
      * @return array<array<string, mixed>|null>
      */
     public function forField(ResolveInfo $resolveInfo): array
@@ -57,18 +57,17 @@ class ClientDirective
     }
 
     /**
-     * @return \GraphQL\Type\Definition\Directive
      * @throws \Nuwave\Lighthouse\Exceptions\DefinitionException
      */
     protected function definition(): Directive
     {
-        if ($this->definition) {
+        if ($this->definition !== null) {
             return $this->definition;
         }
 
-        /** @var \Nuwave\Lighthouse\GraphQL $graphQL */
-        $graphQL = app(GraphQL::class);
-        $schema = $graphQL->prepSchema();
+        /** @var \Nuwave\Lighthouse\Schema\SchemaBuilder $schemaBuilder */
+        $schemaBuilder = app(SchemaBuilder::class);
+        $schema = $schemaBuilder->schema();
 
         $definition = $schema->getDirective($this->name);
         if ($definition === null) {

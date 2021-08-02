@@ -2,60 +2,92 @@
 
 namespace Nuwave\Lighthouse\Schema\Directives;
 
+use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Database\Eloquent\Model;
-use Nuwave\Lighthouse\Exceptions\DirectiveException;
+use Nuwave\Lighthouse\Exceptions\DefinitionException;
+use Nuwave\Lighthouse\Execution\BatchLoader\BatchLoaderRegistry;
+use Nuwave\Lighthouse\Execution\BatchLoader\RelationBatchLoader;
+use Nuwave\Lighthouse\Execution\ModelsLoader\CountModelsLoader;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
-use Nuwave\Lighthouse\Support\Contracts\DefinedDirective;
 use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
+use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 
-class CountDirective extends BaseDirective implements FieldResolver, DefinedDirective
+class CountDirective extends BaseDirective implements FieldResolver
 {
+    use RelationDirectiveHelpers;
+
     public static function definition(): string
     {
-        return /** @lang GraphQL */ <<<'SDL'
+        return /** @lang GraphQL */ <<<'GRAPHQL'
 """
 Returns the count of a given relationship or model.
 """
 directive @count(
   """
-  The relationship which you want to run the count on.
+  The relationship to count.
+  Mutually exclusive with the `model` argument.
   """
   relation: String
 
   """
-  The model to run the count on.
+  The model to count.
+  Mutually exclusive with the `relation` argument.
   """
   model: String
+
+  """
+  Apply scopes to the underlying query.
+  """
+  scopes: [String!]
 ) on FIELD_DEFINITION
-SDL;
+GRAPHQL;
     }
 
-    /**
-     * Returns the count of a given relationship or model.
-     *
-     * @param FieldValue $value
-     * @return FieldValue
-     */
-    public function resolveField(FieldValue $value)
+    public function resolveField(FieldValue $fieldValue): FieldValue
     {
-        return $value->setResolver(
-            function (?Model $model) {
-                // Fetch the count by relation
-                $relation = $this->directiveArgValue('relation');
-                if (! is_null($relation)) {
-                    return $model->{$relation}()->count();
-                }
+        $modelArg = $this->directiveArgValue('model');
+        if (is_string($modelArg)) {
+            $fieldValue->setResolver(
+                function ($root, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) use ($modelArg): int {
+                    $query = $this
+                        ->namespaceModelClass($modelArg)
+                        ::query();
 
-                // Else we try to fetch by model.
-                $modelArg = $this->directiveArgValue('model');
-                if (! is_null($modelArg)) {
-                    return $this->namespaceModelClass($modelArg)::count();
-                }
+                    $this->makeBuilderDecorator($resolveInfo)($query);
 
-                throw new DirectiveException(
-                    "A `model` or `relation argument must be assigned to the '{$this->name()}' directive on '{$this->nodeName()}"
-                );
-            }
+                    return $query->count();
+                }
+            );
+
+            return $fieldValue;
+        }
+
+        $relation = $this->directiveArgValue('relation');
+        if (is_string($relation)) {
+            $fieldValue->setResolver(
+                function (Model $parent, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) {
+                    /** @var \Nuwave\Lighthouse\Execution\BatchLoader\RelationBatchLoader $relationBatchLoader */
+                    $relationBatchLoader = BatchLoaderRegistry::instance(
+                        array_merge(
+                            $this->qualifyPath($args, $resolveInfo),
+                            ['count']
+                        ),
+                        function () use ($resolveInfo): RelationBatchLoader {
+                            return new RelationBatchLoader(
+                                new CountModelsLoader($this->relation(), $this->makeBuilderDecorator($resolveInfo))
+                            );
+                        }
+                    );
+
+                    return $relationBatchLoader->load($parent);
+                }
+            );
+
+            return $fieldValue;
+        }
+
+        throw new DefinitionException(
+            "A `model` or `relation` argument must be assigned to the '{$this->name()}' directive on '{$this->nodeName()}'."
         );
     }
 }

@@ -5,29 +5,28 @@ Client directives allow clients to change the behaviour of query execution.
 > Client directives must not be used within your schema definition.
 
 The [GraphQL specification](https://graphql.github.io/graphql-spec/June2018/#sec-Type-System.Directives)
-mentions two client directives: [`@skip`](#skip) and [`@include`](#include).
+mentions two client directives: [@skip](#skip) and [@include](#include).
 Both are built-in to Lighthouse and work out-of-the-box.
 
 ## @skip
 
 This directive is part of the [GraphQL spec](https://graphql.github.io/graphql-spec/June2018/#sec--include)
-and is built-in to Lighthouse. 
+and is built-in to Lighthouse.
 
-The `@skip` directive may be provided for fields, fragment spreads, and inline fragments, and allows for conditional 
+The [@skip](#skip) directive may be provided for fields, fragment spreads, and inline fragments, and allows for conditional
 exclusion during execution as described by the `if` argument.
 
 ```graphql
 directive @skip(
-    """
-    If the value passed into the if field is true the field this 
-    is decorating will not be included in the query response.
-    """
-    if: Boolean!
-) 
-on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
+  """
+  If the value passed into the if field is true the field this
+  is decorating will not be included in the query response.
+  """
+  if: Boolean!
+) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
 ```
 
-In this example experimentalField will only be queried if the variable $someTest has the value `false`.
+In this example, `experimentalField` will only be queried if the variable `$someTest` has the value `false`.
 
 ```graphql
 query myQuery($someTest: Boolean) {
@@ -37,24 +36,23 @@ query myQuery($someTest: Boolean) {
 
 ## @include
 
-This directive is part of the [GraphQL spec](https://graphql.github.io/graphql-spec/June2018/#sec--include) 
-and is built-in to Lighthouse. 
+This directive is part of the [GraphQL spec](https://graphql.github.io/graphql-spec/June2018/#sec--include)
+and is built-in to Lighthouse.
 
-The `@include` directive may be provided for fields, fragment spreads, and inline fragments, 
+The [@include](#include) directive may be provided for fields, fragment spreads, and inline fragments,
 and allows for conditional inclusion during execution as described by the `if` argument.
 
 ```graphql
 directive @include(
-    """
-    If the "if" value is true the field this is connected with will be included in the query response.
-    Otherwise it will not.
-    """
-    if: Boolean
+  """
+  If the "if" value is true the field this is connected with will be included in the query response.
+  Otherwise it will not.
+  """
+  if: Boolean
 ) on FIELD | FRAGMENT_SPREAD | INLINE_FRAGMENT
-
 ```
 
-In this example experimentalField will only be queried if the variable $someTest has the value true
+In this example, `experimentalField` will only be queried if the variable `$someTest` has the value `true`.
 
 ```graphql
 query myQuery($someTest: Boolean) {
@@ -70,8 +68,8 @@ First, add a definition of your directive to your schema.
 ```graphql
 "A description of what this directive does."
 directive @example(
-    "Client directives can have arguments too!"
-    someArg: String
+  "Client directives can have arguments too!"
+  someArg: String
 ) on FIELD
 ```
 
@@ -92,11 +90,11 @@ configurations of a client directive:
 
 ```graphql
 {
-    foo
-    fooBar: foo @example
-    ... on Query {
-        foo @example(bar: "baz")
-    }
+  foo
+  fooBar: foo @example
+  ... on Query {
+    foo @example(bar: "baz")
+  }
 }
 ```
 
@@ -121,5 +119,5 @@ For the example query above, it will look like this:
 You are then free to implement whatever logic on top of that. Some client directives may require
 only one field node to have it set, whereas others might require all of them to have the same configuration.
 
-> There are other locations where client directives may be used on: http://spec.graphql.org/draft/#ExecutableDirectiveLocation
+> There are other locations where client directives may be used on: https://spec.graphql.org/draft/#ExecutableDirectiveLocation
 > You can add a PR to Lighthouse if you need them.

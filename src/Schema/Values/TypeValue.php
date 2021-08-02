@@ -27,10 +27,6 @@ class TypeValue
      */
     protected $cacheKey;
 
-    /**
-     * @param  \GraphQL\Language\AST\TypeDefinitionNode  $typeDefinition
-     * @return void
-     */
     public function __construct(TypeDefinitionNode $typeDefinition)
     {
         $this->typeDefinition = $typeDefinition;
@@ -38,8 +34,6 @@ class TypeValue
 
     /**
      * Get the name of the node.
-     *
-     * @return string
      */
     public function getTypeDefinitionName(): string
     {
@@ -48,8 +42,6 @@ class TypeValue
 
     /**
      * Get the underlying type definition.
-     *
-     * @return \GraphQL\Language\AST\TypeDefinitionNode
      */
     public function getTypeDefinition(): TypeDefinitionNode
     {
@@ -57,20 +49,7 @@ class TypeValue
     }
 
     /**
-     * Get the underlying type definition fields.
-     *
-     * @deprecated
-     * @return \GraphQL\Language\AST\NodeList|array
-     */
-    public function getTypeDefinitionFields()
-    {
-        return data_get($this->typeDefinition, 'fields', []);
-    }
-
-    /**
      * Get node's cache key.
-     *
-     * @return string|null
      */
     public function getCacheKey(): ?string
     {
@@ -79,9 +58,6 @@ class TypeValue
 
     /**
      * Set node cache key.
-     *
-     * @param  string|null  $key
-     * @return $this
      */
     public function setCacheKey(string $key = null): self
     {

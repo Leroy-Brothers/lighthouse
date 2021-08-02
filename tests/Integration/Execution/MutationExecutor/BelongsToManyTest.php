@@ -107,7 +107,7 @@ class BelongsToManyTest extends DBTestCase
     }
     '.self::PLACEHOLDER_QUERY;
 
-    public function testCanSyncWithoutDetaching(): void
+    public function testSyncWithoutDetaching(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -171,7 +171,7 @@ class BelongsToManyTest extends DBTestCase
         ]);
     }
 
-    public function testCanCreateWithNewBelongsToMany(): void
+    public function testCreateWithNewBelongsToMany(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -212,7 +212,7 @@ class BelongsToManyTest extends DBTestCase
         ]);
     }
 
-    public function testCanUpsertWithBelongsToManyOnNonExistentData(): void
+    public function testUpsertWithBelongsToManyOnNonExistentData(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -316,7 +316,7 @@ GRAPHQL
         $this->assertSame('is_user', $role->name);
     }
 
-    public function testCanCreateAndConnectWithBelongsToMany(): void
+    public function testCreateAndConnectWithBelongsToMany(): void
     {
         factory(User::class)->create(['name' => 'user_one']);
         factory(User::class)->create(['name' => 'user_two']);
@@ -357,7 +357,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreationAndConnectWithBelongsToMany(): void
+    public function testUpsertUsingCreationAndConnectWithBelongsToMany(): void
     {
         factory(User::class)->create(['name' => 'user_one']);
         factory(User::class)->create(['name' => 'user_two']);
@@ -399,7 +399,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanCreateWithBelongsToMany(): void
+    public function testCreateWithBelongsToMany(): void
     {
         factory(Role::class)->create([
             'name' => 'is_admin',
@@ -493,7 +493,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreationWithBelongsToMany(): void
+    public function testUpsertUsingCreationWithBelongsToMany(): void
     {
         factory(Role::class)->create([
             'name' => 'is_admin',
@@ -550,7 +550,10 @@ GRAPHQL
         $this->assertSame('is_user', $role->name);
     }
 
-    public function existingModelMutations()
+    /**
+     * @return array<array<string, string>>
+     */
+    public function existingModelMutations(): array
     {
         return [
             ['Update action' => 'update'],
@@ -561,7 +564,7 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanUpdateWithBelongsToMany(string $action): void
+    public function testUpdateWithBelongsToMany(string $action): void
     {
         factory(Role::class)
             ->create([
@@ -625,7 +628,7 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanDeleteWithBelongsToMany(string $action): void
+    public function testDeleteWithBelongsToMany(string $action): void
     {
         factory(Role::class)
             ->create([
@@ -668,7 +671,7 @@ GRAPHQL
         ]);
 
         /** @var Role $role */
-        $role = Role::first();
+        $role = Role::firstOrFail();
         $this->assertCount(1, $role->users()->get());
         $this->assertSame('is_user', $role->name);
 
@@ -679,7 +682,7 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanConnectWithBelongsToMany(string $action): void
+    public function testConnectWithBelongsToMany(string $action): void
     {
         factory(User::class)->create();
         factory(Role::class)
@@ -722,14 +725,14 @@ GRAPHQL
         ]);
 
         /** @var Role $role */
-        $role = Role::first();
+        $role = Role::firstOrFail();
         $this->assertCount(2, $role->users()->get());
     }
 
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanSyncWithBelongsToMany(string $action): void
+    public function testSyncWithBelongsToMany(string $action): void
     {
         factory(User::class)->create();
         factory(Role::class)
@@ -772,14 +775,14 @@ GRAPHQL
         ]);
 
         /** @var Role $role */
-        $role = Role::first();
+        $role = Role::firstOrFail();
         $this->assertCount(2, $role->users()->get());
     }
 
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanDisconnectWithBelongsToMany(string $action): void
+    public function testDisconnectWithBelongsToMany(string $action): void
     {
         factory(Role::class)
             ->create()
@@ -817,14 +820,14 @@ GRAPHQL
         ]);
 
         /** @var Role $role */
-        $role = Role::first();
+        $role = Role::firstOrFail();
         $this->assertCount(1, $role->users()->get());
 
         $this->assertNotNull(User::find(1));
         $this->assertNotNull(User::find(2));
     }
 
-    public function testCanSyncExistingUsersDuringCreateToABelongsToManyRelation(): void
+    public function testSyncExistingUsersDuringCreateToABelongsToManyRelation(): void
     {
         factory(User::class, 2)->create();
 
@@ -861,7 +864,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanSyncExistingUsersDuringCreateUsingUpsertToABelongsToManyRelation(): void
+    public function testSyncExistingUsersDuringCreateUsingUpsertToABelongsToManyRelation(): void
     {
         factory(User::class, 2)->create();
 
@@ -902,7 +905,7 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanDisconnectAllRelatedModelsOnEmptySync(string $action): void
+    public function testDisconnectAllRelatedModelsOnEmptySync(string $action): void
     {
         /** @var User $user */
         $user = factory(User::class)->create();
@@ -942,10 +945,10 @@ GRAPHQL
         $this->assertCount(0, $role->users);
     }
 
-    public function testCanConnectUserWithRoleAndPivotMetaByUsingSync(): void
+    public function testConnectUserWithRoleAndPivotMetaByUsingSync(): void
     {
         $user = factory(User::class)->create();
-        $role = factory(Role::class)->create();
+        factory(Role::class)->create();
         $role2 = factory(Role::class)->create();
         $user->roles()->attach($role2);
 
@@ -999,10 +1002,10 @@ GRAPHQL
         ]);
     }
 
-    public function testCanConnectUserWithRoleAndPivotMetaByUsingSyncWithoutDetach(): void
+    public function testConnectUserWithRoleAndPivotMetaByUsingSyncWithoutDetach(): void
     {
         $user = factory(User::class)->create();
-        $role = factory(Role::class)->create();
+        factory(Role::class)->create();
         $role2 = factory(Role::class)->create();
         $user->roles()->attach($role2);
 
@@ -1050,7 +1053,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanConnectUserWithRoleAndPivotMetaByUsingConnect(): void
+    public function testConnectUserWithRoleAndPivotMetaByUsingConnect(): void
     {
         factory(User::class)->create();
         factory(Role::class)->create();

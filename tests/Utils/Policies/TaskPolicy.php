@@ -7,7 +7,7 @@ use Tests\Utils\Models\User;
 
 class TaskPolicy
 {
-    const ADMIN = 'admin';
+    public const ADMIN = 'admin';
 
     public function adminOnly(User $user): bool
     {
@@ -16,6 +16,11 @@ class TaskPolicy
 
     public function delete(User $user, Task $task): bool
     {
-        return $user->id === $task->user->id;
+        $taskUser = $task->user;
+        if ($taskUser === null) {
+            return false;
+        }
+
+        return $user->id === $taskUser->id;
     }
 }

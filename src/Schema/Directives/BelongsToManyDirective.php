@@ -2,15 +2,13 @@
 
 namespace Nuwave\Lighthouse\Schema\Directives;
 
-use Nuwave\Lighthouse\Support\Contracts\DefinedDirective;
 use Nuwave\Lighthouse\Support\Contracts\FieldManipulator;
-use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
 
-class BelongsToManyDirective extends RelationDirective implements FieldResolver, FieldManipulator, DefinedDirective
+class BelongsToManyDirective extends RelationDirective implements FieldManipulator
 {
     public static function definition(): string
     {
-        return /** @lang GraphQL */ <<<'SDL'
+        return /** @lang GraphQL */ <<<'GRAPHQL'
 """
 Resolves a field through the Eloquent `BelongsToMany` relationship.
 """
@@ -27,20 +25,19 @@ directive @belongsToMany(
   scopes: [String!]
 
   """
-  ALlows to resolve the relation as a paginated list.
-  Allowed values: `paginator`, `connection`.
+  Allows to resolve the relation as a paginated list.
   """
-  type: String
+  type: BelongsToManyType
 
   """
-  Specify the default quantity of elements to be returned.
-  Only applies when using pagination.
+  Allow clients to query paginated lists without specifying the amount of items.
+  Overrules the `pagination.default_count` setting from `lighthouse.php`.
   """
   defaultCount: Int
 
   """
-  Specify the maximum quantity of elements to be returned.
-  Only applies when using pagination.
+  Limit the maximum amount of items that clients can request from paginated lists.
+  Overrules the `pagination.max_count` setting from `lighthouse.php`.
   """
   maxCount: Int
 
@@ -51,6 +48,26 @@ directive @belongsToMany(
   """
   edgeType: String
 ) on FIELD_DEFINITION
-SDL;
+
+"""
+Options for the `type` argument of `@belongsToMany`.
+"""
+enum BelongsToManyType {
+    """
+    Offset-based pagination, similar to the Laravel default.
+    """
+    PAGINATOR
+
+    """
+    Offset-based pagination like the Laravel "Simple Pagination", which does not count the total number of records.
+    """
+    SIMPLE
+
+    """
+    Cursor-based pagination, compatible with the Relay specification.
+    """
+    CONNECTION
+}
+GRAPHQL;
     }
 }

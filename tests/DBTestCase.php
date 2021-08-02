@@ -2,21 +2,26 @@
 
 namespace Tests;
 
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Support\Facades\DB;
 
 abstract class DBTestCase extends TestCase
 {
+    /**
+     * Indicates if migrations ran.
+     *
+     * @var bool
+     */
     protected static $migrated = false;
 
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
         if (! static::$migrated) {
-            // We have to use this instead of --realpath as long as Laravel 5.5 is supported
-            $this->app->setBasePath(__DIR__);
             $this->artisan('migrate:fresh', [
-                '--path' => 'database/migrations',
+                '--path' => __DIR__.'/database/migrations',
+                '--realpath' => true,
             ]);
 
             static::$migrated = true;
@@ -24,24 +29,39 @@ abstract class DBTestCase extends TestCase
 
         // Ensure we start from a clean slate each time
         // We cannot use transactions, as they do not reset autoincrement
+        $databaseName = env('LIGHTHOUSE_TEST_DB_DATABASE') ?? 'lighthouse';
+        $columnName = "Tables_in_{$databaseName}";
         foreach (DB::select('SHOW TABLES') as $table) {
-            DB::table($table->Tables_in_test)->truncate();
+            DB::table($table->{$columnName})->truncate();
         }
 
         $this->withFactories(__DIR__.'/database/factories');
     }
 
-    protected function getEnvironmentSetUp($app)
+    protected function getEnvironmentSetUp($app): void
     {
         parent::getEnvironmentSetUp($app);
 
-        $app['config']->set('database.default', 'mysql');
-        $app['config']->set('database.connections.mysql', [
+        /** @var \Illuminate\Contracts\Config\Repository $config */
+        $config = $app->make(ConfigRepository::class);
+
+        $config->set('database.default', 'mysql');
+        $config->set('database.connections.mysql', $this->mysqlOptions());
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    protected function mysqlOptions(): array
+    {
+        return [
             'driver' => 'mysql',
-            'database' => 'test',
-            'host' => env('GITHUB_ACTIONS') ? '127.0.0.1' : 'mysql',
-            'username' => 'root',
-            'password' => env('GITHUB_ACTIONS') ? 'root' : '',
-        ]);
+            'database' => env('LIGHTHOUSE_TEST_DB_DATABASE', 'test'),
+            'username' => env('LIGHTHOUSE_TEST_DB_USERNAME', 'root'),
+            'password' => env('LIGHTHOUSE_TEST_DB_PASSWORD', ''),
+            'host' => env('LIGHTHOUSE_TEST_DB_HOST', 'mysql'),
+            'port' => env('LIGHTHOUSE_TEST_DB_PORT', '3306'),
+            'unix_socket' => env('LIGHTHOUSE_TEST_DB_UNIX_SOCKET', null),
+        ];
     }
 }

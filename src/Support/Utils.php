@@ -15,14 +15,14 @@ class Utils
      * If the class itself exists, it is simply returned as is.
      * Else, the given namespaces are tried in order.
      *
-     * @param  string  $classCandidate
-     * @param  array  $namespacesToTry
-     * @param  callable  $determineMatch
-     * @return string|null
+     * @param  array<string>  $namespacesToTry
+     * @param  callable(string $className): bool  $determineMatch
+     * @return class-string|null
      */
     public static function namespaceClassname(string $classCandidate, array $namespacesToTry, callable $determineMatch): ?string
     {
         if ($determineMatch($classCandidate)) {
+            /** @var class-string $classCandidate */
             return $classCandidate;
         }
 
@@ -32,6 +32,7 @@ class Utils
             $className = array_shift($namespacesToTry).'\\'.$classCandidate;
 
             if ($determineMatch($className)) {
+                /** @var class-string $className */
                 return $className;
             }
         }
@@ -42,9 +43,8 @@ class Utils
     /**
      * Construct a closure that passes through the arguments.
      *
-     * @param  string  $className This class is resolved through the container.
+     * @param  class-string  $className This class is resolved through the container.
      * @param  string  $methodName The method that gets passed the arguments of the closure.
-     * @return \Closure
      *
      * @throws \Nuwave\Lighthouse\Exceptions\DefinitionException
      */
@@ -54,7 +54,10 @@ class Utils
             throw new DefinitionException("Method '{$methodName}' does not exist on class '{$className}'");
         }
 
-        return Closure::fromCallable([app($className), $methodName]);
+        return Closure::fromCallable(
+            // @phpstan-ignore-next-line this works
+            [app($className), $methodName]
+        );
     }
 
     /**
@@ -83,16 +86,40 @@ class Utils
     /**
      * Apply a callback to a value or each value in an array.
      *
-     * @param  \Closure  $callback
-     * @param  mixed|mixed[]  $valueOrValues
-     * @return mixed|mixed[]
+     * @param  mixed|array<mixed>  $valueOrValues
+     * @return mixed|array<mixed>
      */
     public static function applyEach(\Closure $callback, $valueOrValues)
     {
-        if (! is_array($valueOrValues)) {
-            return $callback($valueOrValues);
+        if (is_array($valueOrValues)) {
+            return array_map($callback, $valueOrValues);
         }
 
-        return array_map($callback, $valueOrValues);
+        return $callback($valueOrValues);
+    }
+
+    /**
+     * Determine if a class uses a trait.
+     *
+     * @param  object|string  $class
+     */
+    public static function classUsesTrait($class, string $trait): bool
+    {
+        return in_array(
+            $trait,
+            class_uses_recursive($class)
+        );
+    }
+
+    /**
+     * Construct a callback that checks if its input is a given class.
+     *
+     * @return Closure(mixed): bool
+     */
+    public static function instanceofMatcher(string $classLike): Closure
+    {
+        return function ($object) use ($classLike): bool {
+            return $object instanceof $classLike;
+        };
     }
 }

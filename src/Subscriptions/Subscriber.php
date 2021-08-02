@@ -3,125 +3,158 @@
 namespace Nuwave\Lighthouse\Subscriptions;
 
 use GraphQL\Language\AST\DocumentNode;
+use GraphQL\Language\AST\NodeList;
 use GraphQL\Type\Definition\ResolveInfo;
 use GraphQL\Utils\AST;
 use Illuminate\Support\Str;
-use Nuwave\Lighthouse\Exceptions\SubscriptionException;
 use Nuwave\Lighthouse\Subscriptions\Contracts\ContextSerializer;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 use Serializable;
 
 class Subscriber implements Serializable
 {
-    const MISSING_OPERATION_NAME = 'Must pass an operation name when using a subscription.';
-
     /**
+     * A unique key for the subscriber's channel.
+     *
+     * This has to be unique for each subscriber, because each of them can send a different
+     * query and must receive a response that is specifically tailored towards that.
+     *
      * @var string
      */
     public $channel;
 
     /**
-     * @var mixed
+     * The topic subscribed to.
+     *
+     * @var string
      */
-    public $root;
+    public $topic;
 
     /**
-     * @var array
-     */
-    public $args;
-
-    /**
-     * @var mixed
-     */
-    public $context;
-
-    /**
+     * The contents of the query.
+     *
      * @var \GraphQL\Language\AST\DocumentNode
      */
     public $query;
 
     /**
+     * The name of the queried field.
+     *
+     * Guaranteed be be unique because of
+     * @see \GraphQL\Validator\Rules\SingleFieldSubscription
+     *
      * @var string
      */
-    public $operationName;
+    public $fieldName;
 
     /**
-     * @param  mixed[]  $args
-     * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
-     * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
-     * @return void
+     * The root element of the query.
      *
-     * @throws \Nuwave\Lighthouse\Exceptions\SubscriptionException
+     * @var mixed Can be anything.
+     */
+    public $root;
+
+    /**
+     * The args passed to the subscription query.
+     *
+     * @var array<string, mixed>
+     */
+    public $args;
+
+    /**
+     * The variables passed to the subscription query.
+     *
+     * @var array<string, mixed>
+     */
+    public $variables;
+
+    /**
+     * The context passed to the query.
+     *
+     * @var \Nuwave\Lighthouse\Support\Contracts\GraphQLContext
+     */
+    public $context;
+
+    /**
+     * @param  array<string, mixed>  $args
      */
     public function __construct(
         array $args,
         GraphQLContext $context,
         ResolveInfo $resolveInfo
     ) {
-        $operationName = $resolveInfo->operation->name;
-        if (! $operationName) {
-            throw new SubscriptionException(
-                self::MISSING_OPERATION_NAME
-            );
-        }
-        $this->operationName = $operationName->value;
-
+        $this->fieldName = $resolveInfo->fieldName;
         $this->channel = self::uniqueChannelName();
         $this->args = $args;
+        $this->variables = $resolveInfo->variableValues;
         $this->context = $context;
 
-        $documentNode = new DocumentNode([]);
-        $documentNode->definitions = $resolveInfo->fragments;
-        $documentNode->definitions[] = $resolveInfo->operation;
-        $this->query = $documentNode;
+        /**
+         * Must be here, since webonyx/graphql-php validated the subscription.
+         *
+         * @var \GraphQL\Language\AST\OperationDefinitionNode $operation
+         */
+        $operation = $resolveInfo->operation;
+
+        $this->query = new DocumentNode([
+            'definitions' => new NodeList(array_merge(
+                $resolveInfo->fragments,
+                [$operation]
+            )),
+        ]);
     }
 
     /**
      * Unserialize subscription from a JSON string.
      *
      * @param  string  $subscription
-     * @return $this
      */
-    public function unserialize($subscription): self
+    public function unserialize($subscription): void
     {
-        $data = json_decode($subscription, true);
+        $data = \Safe\json_decode($subscription, true);
 
-        $this->operationName = $data['operation_name'];
         $this->channel = $data['channel'];
+        $this->topic = $data['topic'];
+
+        /**
+         * We know the type since it is set during construction and serialized.
+         *
+         * @var \GraphQL\Language\AST\DocumentNode $documentNode
+         */
+        $documentNode = AST::fromArray(
+            unserialize($data['query'])
+        );
+        $this->query = $documentNode;
+        $this->fieldName = $data['field_name'];
         $this->args = $data['args'];
+        $this->variables = $data['variables'];
         $this->context = $this->contextSerializer()->unserialize(
             $data['context']
         );
-        $this->query = AST::fromArray(
-            unserialize($data['query'])
-        );
-
-        return $this;
     }
 
     /**
      * Convert this into a JSON string.
-     *
-     * @return false|string
      */
-    public function serialize()
+    public function serialize(): string
     {
-        return json_encode([
-            'operation_name' => $this->operationName,
+        return \Safe\json_encode([
             'channel' => $this->channel,
-            'args' => $this->args,
-            'context' => $this->contextSerializer()->serialize($this->context),
+            'topic' => $this->topic,
             'query' => serialize(
                 AST::toArray($this->query)
             ),
+            'field_name' => $this->fieldName,
+            'args' => $this->args,
+            'variables' => $this->variables,
+            'context' => $this->contextSerializer()->serialize($this->context),
         ]);
     }
 
     /**
      * Set root data.
      *
-     * @param  mixed  $root
-     * @return $this
+     * @deprecated set the attribute directly
      */
     public function setRoot($root): self
     {
@@ -132,17 +165,12 @@ class Subscriber implements Serializable
 
     /**
      * Generate a unique private channel name.
-     *
-     * @return string
      */
     public static function uniqueChannelName(): string
     {
         return 'private-lighthouse-'.Str::random(32).'-'.time();
     }
 
-    /**
-     * @return \Nuwave\Lighthouse\Subscriptions\Contracts\ContextSerializer
-     */
     protected function contextSerializer(): ContextSerializer
     {
         return app(ContextSerializer::class);

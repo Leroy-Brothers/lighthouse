@@ -2,7 +2,7 @@
 
 namespace Tests\Integration\Schema\Directives;
 
-use GraphQL\Error\Error;
+use GraphQL\Type\Definition\Type;
 use Illuminate\Support\Arr;
 use Nuwave\Lighthouse\Pagination\PaginationArgs;
 use Tests\DBTestCase;
@@ -26,14 +26,14 @@ class HasManyDirectiveTest extends DBTestCase
      */
     protected $tasks;
 
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->user = factory(User::class)->create();
-        $this->tasks = factory(Task::class, 3)->create([
-            'user_id' => $this->user->getKey(),
-        ]);
+        $this->tasks = factory(Task::class, 3)->make();
+        $this->user->tasks()->saveMany($this->tasks);
+
         factory(Task::class)->create([
             'user_id' => $this->user->getKey(),
             // This task should be ignored via global scope on the Task model
@@ -43,7 +43,7 @@ class HasManyDirectiveTest extends DBTestCase
         $this->be($this->user);
     }
 
-    public function testCanQueryHasManyRelationship(): void
+    public function testQueryHasManyRelationship(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
@@ -78,6 +78,44 @@ class HasManyDirectiveTest extends DBTestCase
         ')->assertJsonCount(3, 'data.user.tasks');
     }
 
+    public function testQueryHasManyWithCondition(): void
+    {
+        $this->schema = /** @lang GraphQL */ '
+        type User {
+            tasks(
+                id: ID @eq
+            ): [Task!]! @hasMany
+        }
+
+        type Task {
+            id: Int
+            foo: String
+        }
+
+        type Query {
+            user: User @auth
+        }
+        ';
+
+        /** @var Task $firstTask */
+        $firstTask = $this->user->tasks->first();
+
+        // Ensure global scopes are respected here
+        $this
+            ->graphQL(/** @lang GraphQL */ '
+            query ($id: ID){
+                user {
+                    tasks(id: $id) {
+                        id
+                    }
+                }
+            }
+            ', [
+                'id' => $firstTask->id,
+            ])
+            ->assertJsonCount(1, 'data.user.tasks');
+    }
+
     public function testCallsScopeWithResolverArgs(): void
     {
         $this->assertCount(3, $this->user->tasks);
@@ -108,12 +146,21 @@ class HasManyDirectiveTest extends DBTestCase
         ')->assertJsonCount(2, 'data.user.tasks');
     }
 
-    public function testCanQueryHasManyPaginator(): void
+    /**
+     * @dataProvider batchloadRelations
+     */
+    public function testQueryHasManyPaginator(bool $batchloadRelations): void
     {
+        config(['lighthouse.batchload_relations' => $batchloadRelations]);
+
+        $this->user->posts()->saveMany(
+            factory(Post::class, 3)->make()
+        );
+
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "paginator")
-            posts: [Post!]! @hasMany(type: "paginator")
+            tasks: [Task!]! @hasMany(type: PAGINATOR)
+            posts: [Post!]! @hasMany(type: SIMPLE)
         }
 
         type Task {
@@ -129,41 +176,58 @@ class HasManyDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->graphQL(/** @lang GraphQL */ '
-        {
-            user {
-                tasks(first: 2) {
-                    paginatorInfo {
-                        count
-                        hasMorePages
-                        total
+        $this
+            ->graphQL(/** @lang GraphQL */ '
+            {
+                user {
+                    tasks(first: 2) {
+                        paginatorInfo {
+                            count
+                            hasMorePages
+                            total
+                        }
+                        data {
+                            id
+                        }
                     }
-                    data {
-                        id
+                    posts(first: 5) {
+                        paginatorInfo {
+                            count
+                        }
+                        data {
+                            id
+                        }
                     }
                 }
             }
-        }
-        ')->assertJson([
-            'data' => [
-                'user' => [
-                    'tasks' => [
-                        'paginatorInfo' => [
-                            'count' => 2,
-                            'hasMorePages' => true,
-                            'total' => 3,
+            ')
+            ->assertJson([
+                'data' => [
+                    'user' => [
+                        'tasks' => [
+                            'paginatorInfo' => [
+                                'count' => 2,
+                                'hasMorePages' => true,
+                                'total' => 3,
+                            ],
+                        ],
+                        'posts' => [
+                            'paginatorInfo' => [
+                                'count' => 3,
+                            ],
                         ],
                     ],
                 ],
-            ],
-        ])->assertJsonCount(2, 'data.user.tasks.data');
+            ])
+            ->assertJsonCount(2, 'data.user.tasks.data')
+            ->assertJsonCount(3, 'data.user.posts.data');
     }
 
     public function testDoesNotRequireModelClassForPaginatedHasMany(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [NotTheModelNameTask!]! @hasMany(type: "paginator")
+            tasks: [NotTheModelNameTask!]! @hasMany(type: PAGINATOR)
         }
 
         type NotTheModelNameTask {
@@ -207,11 +271,11 @@ class HasManyDirectiveTest extends DBTestCase
 
     public function testPaginatorTypeIsLimitedByMaxCountFromDirective(): void
     {
-        config(['lighthouse.paginate_max_count' => 1]);
+        config(['lighthouse.pagination.max_count' => 1]);
 
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "paginator", maxCount: 3)
+            tasks: [Task!]! @hasMany(type: PAGINATOR, maxCount: 3)
         }
 
         type Task {
@@ -223,22 +287,19 @@ class HasManyDirectiveTest extends DBTestCase
         }
         ';
 
-        $result = $this->graphQL(/** @lang GraphQL */ '
-        {
-            user {
-                tasks(first: 5) {
-                    data {
-                        id
+        $this
+            ->graphQL(/** @lang GraphQL */ '
+            {
+                user {
+                    tasks(first: 5) {
+                        data {
+                            id
+                        }
                     }
                 }
             }
-        }
-        ');
-
-        $this->assertSame(
-            PaginationArgs::requestedTooManyItems(3, 5),
-            $result->jsonGet('errors.0.message')
-        );
+            ')
+            ->assertGraphQLErrorMessage(PaginationArgs::requestedTooManyItems(3, 5));
     }
 
     public function testHandlesPaginationWithCountZero(): void
@@ -246,7 +307,7 @@ class HasManyDirectiveTest extends DBTestCase
         $this->schema = /** @lang GraphQL */ '
         type User {
             id: ID
-            tasks: [Task!] @hasMany(type: "paginator")
+            tasks: [Task!] @hasMany(type: PAGINATOR)
         }
 
         type Task {
@@ -258,34 +319,29 @@ class HasManyDirectiveTest extends DBTestCase
         }
         ';
 
-        $this->graphQL(/** @lang GraphQL */ '
-        {
-            user {
-                id
-                tasks(first: 0) {
-                    data {
-                        id
+        $this
+            ->graphQL(/** @lang GraphQL */ '
+            {
+                user {
+                    id
+                    tasks(first: 0) {
+                        data {
+                            id
+                        }
                     }
                 }
             }
-        }
-        ')->assertJson([
-            'data' => [
-                'user' => [
-                    'id' => $this->user->id,
-                    'tasks' => null,
-                ],
-            ],
-        ])->assertErrorCategory(Error::CATEGORY_GRAPHQL);
+            ')
+            ->assertGraphQLErrorMessage(PaginationArgs::requestedZeroOrLessItems(0));
     }
 
     public function testRelayTypeIsLimitedByMaxCountFromDirective(): void
     {
-        config(['lighthouse.paginate_max_count' => 1]);
+        config(['lighthouse.pagination.max_count' => 1]);
 
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "relay", maxCount: 3)
+            tasks: [Task!]! @hasMany(type: CONNECTION, maxCount: 3)
         }
 
         type Task {
@@ -313,17 +369,17 @@ class HasManyDirectiveTest extends DBTestCase
 
         $this->assertSame(
             PaginationArgs::requestedTooManyItems(3, 5),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 
     public function testPaginatorTypeIsLimitedToMaxCountFromConfig(): void
     {
-        config(['lighthouse.paginate_max_count' => 2]);
+        config(['lighthouse.pagination.max_count' => 2]);
 
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "paginator")
+            tasks: [Task!]! @hasMany(type: PAGINATOR)
         }
 
         type Task {
@@ -349,17 +405,17 @@ class HasManyDirectiveTest extends DBTestCase
 
         $this->assertSame(
             PaginationArgs::requestedTooManyItems(2, 3),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 
     public function testRelayTypeIsLimitedToMaxCountFromConfig(): void
     {
-        config(['lighthouse.paginate_max_count' => 2]);
+        config(['lighthouse.pagination.max_count' => 2]);
 
-        $this->schema = /** @lang GraphQL */'
+        $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "relay")
+            tasks: [Task!]! @hasMany(type: CONNECTION)
         }
 
         type Task {
@@ -387,7 +443,7 @@ class HasManyDirectiveTest extends DBTestCase
 
         $this->assertSame(
             PaginationArgs::requestedTooManyItems(2, 3),
-            $result->jsonGet('errors.0.message')
+            $result->json('errors.0.message')
         );
     }
 
@@ -396,7 +452,7 @@ class HasManyDirectiveTest extends DBTestCase
         $this->schema = /** @lang GraphQL */ '
         type User {
             tasks: [Task!]! @hasMany (
-                type: "relay"
+                type: CONNECTION
                 edgeType: "TaskEdge"
             )
         }
@@ -423,23 +479,26 @@ class HasManyDirectiveTest extends DBTestCase
         );
 
         $user = $this->introspectType('User');
+        $this->assertNotNull($user);
+
+        /** @var array<string, mixed> $user */
         $tasks = Arr::first(
             $user['fields'],
-            function (array $user): bool {
-                return $user['name'] === 'tasks';
+            function (array $field): bool {
+                return $field['name'] === 'tasks';
             }
         );
         $this->assertSame(
             $expectedConnectionName,
-            $tasks['type']['name']
+            $tasks['type']/* TODO add back in in v6 ['ofType'] */['name']
         );
     }
 
-    public function testCanQueryHasManyPaginatorWithADefaultCount(): void
+    public function testQueryHasManyPaginatorWithADefaultCount(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "paginator", defaultCount: 2)
+            tasks: [Task!]! @hasMany(type: PAGINATOR, defaultCount: 2)
         }
 
         type Task {
@@ -481,11 +540,11 @@ class HasManyDirectiveTest extends DBTestCase
         ])->assertJsonCount(2, 'data.user.tasks.data');
     }
 
-    public function testCanQueryHasManyRelayConnection(): void
+    public function testQueryHasManyRelayConnection(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "relay")
+            tasks: [Task!]! @hasMany(type: CONNECTION)
         }
 
         type Task {
@@ -525,11 +584,11 @@ class HasManyDirectiveTest extends DBTestCase
         ])->assertJsonCount(2, 'data.user.tasks.edges');
     }
 
-    public function testCanQueryHasManyRelayConnectionWithADefaultCount(): void
+    public function testQueryHasManyRelayConnectionWithADefaultCount(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "relay", defaultCount: 2)
+            tasks: [Task!]! @hasMany(type: CONNECTION, defaultCount: 2)
         }
 
         type Task {
@@ -569,11 +628,11 @@ class HasManyDirectiveTest extends DBTestCase
         ])->assertJsonCount(2, 'data.user.tasks.edges');
     }
 
-    public function testCanQueryHasManyNestedRelationships(): void
+    public function testQueryHasManyNestedRelationships(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type User {
-            tasks: [Task!]! @hasMany(type: "relay")
+            tasks: [Task!]! @hasMany(type: CONNECTION)
         }
 
         type Task {
@@ -624,7 +683,7 @@ class HasManyDirectiveTest extends DBTestCase
         ->assertJsonCount(2, 'data.user.tasks.edges.0.node.user.tasks.edges');
     }
 
-    public function testCanQueryHasManySelfReferencingRelationships(): void
+    public function testQueryHasManySelfReferencingRelationships(): void
     {
         $post1 = factory(Post::class)->create([
             'id' => 1,
@@ -635,7 +694,7 @@ class HasManyDirectiveTest extends DBTestCase
             'parent_id' => $post1->getKey(),
         ]);
 
-        $post3 = factory(Post::class)->create([
+        factory(Post::class)->create([
             'id' => 3,
             'parent_id' => $post2->getKey(),
         ]);
@@ -693,11 +752,11 @@ class HasManyDirectiveTest extends DBTestCase
 
     public function testThrowsErrorWithUnknownTypeArg(): void
     {
-        $this->expectExceptionMessageRegExp('/^Found invalid pagination type/');
+        $this->expectExceptionMessage('Found invalid pagination type: foo');
 
         $schema = $this->buildSchemaWithPlaceholderQuery(/** @lang GraphQL */ '
         type User {
-            tasks(first: Int! after: Int): [Task!]! @hasMany(type:"foo")
+            tasks(first: Int! after: Int): [Task!]! @hasMany(type: "foo")
         }
 
         type Task {
@@ -706,16 +765,19 @@ class HasManyDirectiveTest extends DBTestCase
         ');
 
         $type = $schema->getType('User');
+
+        $this->assertInstanceOf(Type::class, $type);
+        /** @var \GraphQL\Type\Definition\Type $type */
         $type->config['fields']();
     }
 
-    public function testCanQueryHasManyPaginatorBeforeQuery(): void
+    public function testQueryHasManyPaginatorBeforeQuery(): void
     {
         // BeforeQuery
         $this->schema = /** @lang GraphQL */ '
         type User {
             id: Int!
-            tasks: [Task!]! @hasMany(type: "paginator")
+            tasks: [Task!]! @hasMany(type: PAGINATOR)
         }
 
         type Task {
@@ -739,7 +801,7 @@ class HasManyDirectiveTest extends DBTestCase
         ')->assertJsonCount(2, 'data.tasks.data');
     }
 
-    public function testCanQueryHasManyPaginatorAfterQuery(): void
+    public function testQueryHasManyPaginatorAfterQuery(): void
     {
         // AfterQuery
         $this->schema = /** @lang GraphQL */ '
@@ -750,7 +812,7 @@ class HasManyDirectiveTest extends DBTestCase
 
         type User {
             id: Int!
-            tasks: [Task!]! @hasMany(type: "paginator")
+            tasks: [Task!]! @hasMany(type: PAGINATOR)
         }
 
         type Task {
@@ -769,7 +831,7 @@ class HasManyDirectiveTest extends DBTestCase
         ')->assertJsonCount(2, 'data.tasks.data');
     }
 
-    public function testCanQueryHasManyNoTypePaginator(): void
+    public function testQueryHasManyNoTypePaginator(): void
     {
         // AfterQuery
         $this->schema = /** @lang GraphQL */ '
@@ -797,5 +859,16 @@ class HasManyDirectiveTest extends DBTestCase
             }
         }
         ')->assertJsonCount(2, 'data.tasks.data');
+    }
+
+    /**
+     * @return array<int, array{0: bool}>
+     */
+    public function batchloadRelations(): array
+    {
+        return [
+            [true],
+            [false],
+        ];
     }
 }

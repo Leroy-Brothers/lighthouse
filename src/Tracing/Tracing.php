@@ -2,22 +2,22 @@
 
 namespace Nuwave\Lighthouse\Tracing;
 
-use Carbon\Carbon;
+use GraphQL\Language\Parser;
 use GraphQL\Type\Definition\ResolveInfo;
+use Illuminate\Support\Carbon;
 use Nuwave\Lighthouse\Events\BuildExtensionsResponse;
 use Nuwave\Lighthouse\Events\ManipulateAST;
 use Nuwave\Lighthouse\Events\StartExecution;
 use Nuwave\Lighthouse\Events\StartRequest;
 use Nuwave\Lighthouse\Execution\ExtensionsResponse;
 use Nuwave\Lighthouse\Schema\AST\ASTHelper;
-use Nuwave\Lighthouse\Schema\AST\PartialParser;
 
 class Tracing
 {
     /**
      * The timestamp the request was initially started.
      *
-     * @var \Carbon\Carbon
+     * @var \Illuminate\Support\Carbon
      */
     protected $requestStart;
 
@@ -35,29 +35,23 @@ class Tracing
      *
      * Is reset between batches.
      *
-     * @var array[]
+     * @var array<int, array<string, mixed>>
      */
     protected $resolverTraces = [];
 
     /**
      * Set the tracing directive on all fields of the query to enable tracing them.
-     *
-     * @param  \Nuwave\Lighthouse\Events\ManipulateAST  $manipulateAST
-     * @return void
      */
     public function handleManipulateAST(ManipulateAST $manipulateAST): void
     {
         ASTHelper::attachDirectiveToObjectTypeFields(
             $manipulateAST->documentAST,
-            PartialParser::directive('@tracing')
+            Parser::constDirective('@tracing')
         );
     }
 
     /**
      * Handle request start.
-     *
-     * @param  \Nuwave\Lighthouse\Events\StartRequest  $startRequest
-     * @return void
      */
     public function handleStartRequest(StartRequest $startRequest): void
     {
@@ -67,9 +61,6 @@ class Tracing
 
     /**
      * Handle batch request start.
-     *
-     * @param  \Nuwave\Lighthouse\Events\StartExecution  $startExecution
-     * @return void
      */
     public function handleStartExecution(StartExecution $startExecution): void
     {
@@ -78,9 +69,6 @@ class Tracing
 
     /**
      * Return additional information for the result.
-     *
-     * @param  \Nuwave\Lighthouse\Events\BuildExtensionsResponse  $buildExtensionsResponse
-     * @return \Nuwave\Lighthouse\Execution\ExtensionsResponse
      */
     public function handleBuildExtensionsResponse(BuildExtensionsResponse $buildExtensionsResponse): ExtensionsResponse
     {
@@ -104,10 +92,8 @@ class Tracing
     /**
      * Record resolver execution time.
      *
-     * @param  \GraphQL\Type\Definition\ResolveInfo  $resolveInfo
      * @param  float|int  $start
      * @param  float|int  $end
-     * @return void
      */
     public function record(ResolveInfo $resolveInfo, $start, $end): void
     {
@@ -140,12 +126,11 @@ class Tracing
      *
      * @param  float|int  $start
      * @param  float|int  $end
-     * @return int
      */
     protected function diffTimeInNanoseconds($start, $end): int
     {
         if ($this->platformSupportsNanoseconds()) {
-            return $end - $start;
+            return (int) ($end - $start);
         }
 
         // Difference is in seconds (with microsecond precision)
@@ -157,8 +142,6 @@ class Tracing
 
     /**
      * Test if the current PHP version has the `hrtime` function available to get a nanosecond precision point in time.
-     *
-     * @return bool
      */
     protected function platformSupportsNanoseconds(): bool
     {

@@ -9,37 +9,27 @@ use Nuwave\Lighthouse\Subscriptions\Broadcasters\PusherBroadcaster;
 use Nuwave\Lighthouse\Subscriptions\BroadcastManager;
 use Nuwave\Lighthouse\Subscriptions\Contracts\Broadcaster;
 use Nuwave\Lighthouse\Subscriptions\Subscriber;
-use Nuwave\Lighthouse\Subscriptions\SubscriptionServiceProvider;
+use Symfony\Component\HttpFoundation\Response;
 use Tests\TestCase;
+use Tests\TestsSubscriptions;
 
 class BroadcastManagerTest extends TestCase
 {
+    use TestsSubscriptions;
+
     /**
      * @var \Nuwave\Lighthouse\Subscriptions\BroadcastManager
      */
     protected $broadcastManager;
 
-    protected function getPackageProviders($app)
-    {
-        return array_merge(
-            parent::getPackageProviders($app),
-            [SubscriptionServiceProvider::class]
-        );
-    }
-
-    /**
-     * Set up test environment.
-     *
-     * @return void
-     */
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
         $this->broadcastManager = app(BroadcastManager::class);
     }
 
-    public function testCanResolveDrivers(): void
+    public function testResolveDrivers(): void
     {
         $pusherDriver = $this->broadcastManager->driver('pusher');
         $this->assertInstanceOf(PusherBroadcaster::class, $pusherDriver);
@@ -48,29 +38,29 @@ class BroadcastManagerTest extends TestCase
         $this->assertInstanceOf(LogBroadcaster::class, $logDriver);
     }
 
-    public function testCanExtendBroadcastManager(): void
+    public function testExtendBroadcastManager(): void
     {
         $broadcasterConfig = [];
 
-        $broadcaster = new class implements Broadcaster {
+        $broadcaster = new class implements Broadcaster
+        {
             public function authorized(Request $request)
             {
-                //
+                return new Response();
             }
 
             public function unauthorized(Request $request)
             {
-                //
+                return new Response();
             }
 
             public function hook(Request $request)
             {
-                //
+                return new Response();
             }
 
-            public function broadcast(Subscriber $subscriber, array $data)
+            public function broadcast(Subscriber $subscriber, $data)
             {
-                //
             }
         };
 
@@ -84,17 +74,14 @@ class BroadcastManagerTest extends TestCase
         $resolvedBroadcaster = $this->broadcastManager->driver('foo');
 
         $this->assertSame(['driver' => 'foo'], $broadcasterConfig);
-
-        $this->assertSame(
-            $broadcaster,
-            $resolvedBroadcaster
-        );
+        $this->assertSame($broadcaster, $resolvedBroadcaster);
     }
 
     public function testThrowsIfDriverDoesNotImplementInterface(): void
     {
         $this->broadcastManager->extend('foo', function () {
-            return new class {
+            return new class
+            {
                 //
             };
         });

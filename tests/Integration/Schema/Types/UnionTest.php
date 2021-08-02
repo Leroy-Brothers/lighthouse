@@ -11,11 +11,8 @@ class UnionTest extends DBTestCase
 {
     /**
      * @dataProvider withAndWithoutCustomTypeResolver
-     * @param  string  $schema
-     * @param  string  $query
-     * @return void
      */
-    public function testCanResolveUnionTypes(string $schema, string $query): void
+    public function testResolveUnionTypes(string $schema, string $query): void
     {
         // This creates a user with it
         factory(Post::class)->create(
@@ -51,7 +48,7 @@ class UnionTest extends DBTestCase
     }
 
     /**
-     * @return array[]
+     * @return array<int, array<string>>
      */
     public function withAndWithoutCustomTypeResolver(): array
     {
@@ -64,8 +61,7 @@ class UnionTest extends DBTestCase
     }
 
     /**
-     * @param  bool  $withCustomTypeResolver
-     * @return string[] [string $schema, string $query]
+     * @return array<string> [string $schema, string $query]
      */
     public function schemaAndQuery(bool $withCustomTypeResolver): array
     {
@@ -74,26 +70,26 @@ class UnionTest extends DBTestCase
             : '';
 
         $customResolver = $withCustomTypeResolver
-            ? '@union(resolveType: "Tests\\\\Utils\\\\Unions\\\\CustomStuff@resolveType")'
+            ? /** @lang GraphQL */ '@union(resolveType: "Tests\\\\Utils\\\\Unions\\\\CustomStuff@resolveType")'
             : '';
 
         return [
-            "
+/** @lang GraphQL */ "
             union Stuff {$customResolver} = {$prefix}User | {$prefix}Post
-            
+
             type {$prefix}User {
                 name: String!
             }
-            
+
             type {$prefix}Post {
                 title: String!
             }
-            
+
             type Query {
                 stuff: [Stuff!]! @field(resolver: \"{$this->qualifyTestResolver()}\")
             }
             ",
-            "
+/** @lang GraphQL */ "
             {
                 stuff {
                     ... on {$prefix}User {

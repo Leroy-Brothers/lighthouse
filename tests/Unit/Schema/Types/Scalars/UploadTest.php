@@ -21,7 +21,9 @@ class UploadTest extends TestCase
     {
         $this->expectException(Error::class);
 
-        (new Upload)->parseLiteral('');
+        $upload = new Upload;
+        // @phpstan-ignore-next-line Wrong use is on purpose
+        $upload->parseLiteral('');
     }
 
     public function testThrowsIfParsingValueNotFile(): void

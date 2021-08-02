@@ -5,16 +5,17 @@ namespace Tests\Unit\Schema\AST;
 use GraphQL\Language\AST\DirectiveDefinitionNode;
 use GraphQL\Language\AST\FieldDefinitionNode;
 use GraphQL\Language\AST\ObjectTypeDefinitionNode;
+use GraphQL\Language\Parser;
 use Nuwave\Lighthouse\Exceptions\ParseException;
 use Nuwave\Lighthouse\Schema\AST\DocumentAST;
-use Nuwave\Lighthouse\Schema\AST\PartialParser;
+use Nuwave\Lighthouse\Schema\RootType;
 use Tests\TestCase;
 
 class DocumentASTTest extends TestCase
 {
     public function testParsesSimpleSchema(): void
     {
-        $documentAST = DocumentAST::fromSource('
+        $documentAST = DocumentAST::fromSource(/** @lang GraphQL */ '
         type Query {
             foo: Int
         }
@@ -22,27 +23,39 @@ class DocumentASTTest extends TestCase
 
         $this->assertInstanceOf(
             ObjectTypeDefinitionNode::class,
-            $documentAST->types['Query']
+            $documentAST->types[RootType::QUERY]
         );
     }
 
     public function testThrowsOnInvalidSchema(): void
     {
         $this->expectException(ParseException::class);
-        $this->expectExceptionMessageRegExp('/^Syntax Error/');
+        $this->expectExceptionMessage('Syntax Error: Expected Name, found !, near: ');
 
-        DocumentAST::fromSource('foo');
+        DocumentAST::fromSource(/** @lang GraphQL */ '
+        type Mutation {
+            bar: Int
+        }
+
+        type Query {
+            foo: Int!!
+        }
+
+        type Foo {
+            bar: ID
+        }
+        ');
     }
 
     public function testOverwritesDefinitionWithSameName(): void
     {
-        $documentAST = DocumentAST::fromSource('
+        $documentAST = DocumentAST::fromSource(/** @lang GraphQL */ '
         type Query {
             foo: Int
         }
         ');
 
-        $overwrite = PartialParser::objectTypeDefinition('
+        $overwrite = Parser::objectTypeDefinition(/** @lang GraphQL */ '
         type Query {
             bar: Int
         }
@@ -52,13 +65,13 @@ class DocumentASTTest extends TestCase
 
         $this->assertSame(
             $overwrite,
-            $documentAST->types['Query']
+            $documentAST->types[RootType::QUERY]
         );
     }
 
-    public function testCanBeSerialized(): void
+    public function testBeSerialized(): void
     {
-        $documentAST = DocumentAST::fromSource('
+        $documentAST = DocumentAST::fromSource(/** @lang GraphQL */ '
         type Query {
             foo: Int
         }
@@ -66,13 +79,13 @@ class DocumentASTTest extends TestCase
         directive @foo on FIELD
         ');
 
-        /** @var DocumentAST $reserialized */
+        /** @var \Nuwave\Lighthouse\Schema\AST\DocumentAST $reserialized */
         $reserialized = unserialize(
             serialize($documentAST)
         );
 
-        /** @var ObjectTypeDefinitionNode $queryType */
-        $queryType = $reserialized->types['Query'];
+        /** @var \GraphQL\Language\AST\ObjectTypeDefinitionNode $queryType */
+        $queryType = $reserialized->types[RootType::QUERY];
         $this->assertInstanceOf(
             ObjectTypeDefinitionNode::class,
             $queryType

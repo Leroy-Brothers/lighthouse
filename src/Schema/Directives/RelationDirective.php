@@ -2,118 +2,66 @@
 
 namespace Nuwave\Lighthouse\Schema\Directives;
 
-use Closure;
 use GraphQL\Language\AST\FieldDefinitionNode;
 use GraphQL\Language\AST\ObjectTypeDefinitionNode;
 use GraphQL\Type\Definition\ResolveInfo;
 use Illuminate\Database\Eloquent\Model;
-use Nuwave\Lighthouse\Exceptions\DirectiveException;
-use Nuwave\Lighthouse\Execution\DataLoader\BatchLoader;
-use Nuwave\Lighthouse\Execution\DataLoader\RelationBatchLoader;
+use Nuwave\Lighthouse\Exceptions\DefinitionException;
+use Nuwave\Lighthouse\Execution\BatchLoader\BatchLoaderRegistry;
+use Nuwave\Lighthouse\Execution\BatchLoader\RelationBatchLoader;
+use Nuwave\Lighthouse\Execution\ModelsLoader\PaginatedModelsLoader;
+use Nuwave\Lighthouse\Execution\ModelsLoader\SimpleModelsLoader;
 use Nuwave\Lighthouse\Pagination\PaginationArgs;
 use Nuwave\Lighthouse\Pagination\PaginationManipulator;
 use Nuwave\Lighthouse\Pagination\PaginationType;
 use Nuwave\Lighthouse\Schema\AST\DocumentAST;
 use Nuwave\Lighthouse\Schema\Values\FieldValue;
+use Nuwave\Lighthouse\Support\Contracts\FieldResolver;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
 
-abstract class RelationDirective extends BaseDirective
+abstract class RelationDirective extends BaseDirective implements FieldResolver
 {
-    /**
-     * Resolve the field directive.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\Values\FieldValue  $value
-     * @return \Nuwave\Lighthouse\Schema\Values\FieldValue
-     */
-    public function resolveField(FieldValue $value): FieldValue
+    use RelationDirectiveHelpers;
+
+    public function resolveField(FieldValue $fieldValue): FieldValue
     {
-        $value->setResolver(
+        $fieldValue->setResolver(
             function (Model $parent, array $args, GraphQLContext $context, ResolveInfo $resolveInfo) {
-                $relationName = $this->directiveArgValue('relation', $this->nodeName());
+                $relationName = $this->relation();
 
                 $decorateBuilder = $this->makeBuilderDecorator($resolveInfo);
                 $paginationArgs = $this->paginationArgs($args);
 
                 if (config('lighthouse.batchload_relations')) {
-                    $constructorArgs = [
-                        'relationName' => $relationName,
-                        'decorateBuilder' => $decorateBuilder,
-                    ];
+                    /** @var \Nuwave\Lighthouse\Execution\BatchLoader\RelationBatchLoader $relationBatchLoader */
+                    $relationBatchLoader = BatchLoaderRegistry::instance(
+                        $this->qualifyPath($args, $resolveInfo),
+                        function () use ($relationName, $decorateBuilder, $paginationArgs): RelationBatchLoader {
+                            $modelsLoader = $paginationArgs !== null
+                                ? new PaginatedModelsLoader($relationName, $decorateBuilder, $paginationArgs)
+                                : new SimpleModelsLoader($relationName, $decorateBuilder);
 
-                    if ($paginationArgs) {
-                        $constructorArgs += [
-                            'paginationArgs' => $paginationArgs,
-                        ];
-                    }
+                            return new RelationBatchLoader($modelsLoader);
+                        }
+                    );
 
-                    return BatchLoader
-                        ::instance(
-                            RelationBatchLoader::class,
-                            $this->buildPath($resolveInfo, $parent),
-                            $constructorArgs
-                        )
-                        ->load(
-                            $parent->getKey(),
-                            ['parent' => $parent]
-                        );
-                } else {
-                    /** @var \Illuminate\Database\Eloquent\Relations\Relation $relation */
-                    $relation = $parent->{$relationName}();
-
-                    $decorateBuilder($relation);
-
-                    if ($paginationArgs) {
-                        $relation = $paginationArgs->applyToBuilder($relation);
-                    }
-
-                    return $relation->getResults();
+                    return $relationBatchLoader->load($parent);
                 }
+
+                /** @var \Illuminate\Database\Eloquent\Relations\Relation $relation */
+                $relation = $parent->{$relationName}();
+
+                $decorateBuilder($relation);
+
+                return $paginationArgs !== null
+                    ? $paginationArgs->applyToBuilder($relation)
+                    : $relation->getResults();
             }
         );
 
-        return $value;
+        return $fieldValue;
     }
 
-    protected function makeBuilderDecorator(ResolveInfo $resolveInfo): Closure
-    {
-        return function ($builder) use ($resolveInfo) {
-            $resolveInfo
-                ->argumentSet
-                ->enhanceBuilder(
-                    $builder,
-                    $this->directiveArgValue('scopes', [])
-                );
-        };
-    }
-
-    protected function paginationArgs(array $args): ?PaginationArgs
-    {
-        if ($paginationType = $this->paginationType()) {
-            return PaginationArgs::extractArgs($args, $paginationType, $this->paginateMaxCount());
-        }
-
-        return null;
-    }
-
-    protected function buildPath(ResolveInfo $resolveInfo, Model $parent): array
-    {
-        $path = $resolveInfo->path;
-
-        // When dealing with polymorphic relations, we might have a case where
-        // there are multiple different models at the same path in the query.
-        // Because the RelationBatchLoader can only deal with one kind of parent model,
-        // we make sure we get one unique batch loader instance per model class.
-        $path [] = get_class($parent);
-
-        return $path;
-    }
-
-    /**
-     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $documentAST
-     * @param  \GraphQL\Language\AST\FieldDefinitionNode  $fieldDefinition
-     * @param  \GraphQL\Language\AST\ObjectTypeDefinitionNode  $parentType
-     * @return void
-     */
     public function manipulateFieldDefinition(
         DocumentAST &$documentAST,
         FieldDefinitionNode &$fieldDefinition,
@@ -123,7 +71,7 @@ abstract class RelationDirective extends BaseDirective
 
         // We default to not changing the field if no pagination type is set explicitly.
         // This makes sense for relations, as there should not be too many entries.
-        if (! $paginationType) {
+        if ($paginationType === null) {
             return;
         }
 
@@ -132,50 +80,61 @@ abstract class RelationDirective extends BaseDirective
             $paginationType,
             $fieldDefinition,
             $parentType,
-            $this->directiveArgValue('defaultCount'),
-            $this->paginateMaxCount(),
+            $this->paginationDefaultCount(),
+            $this->paginationMaxCount(),
             $this->edgeType($documentAST)
         );
     }
 
-    protected function paginationType(): ?PaginationType
-    {
-        if ($paginationType = $this->directiveArgValue('type')) {
-            return new PaginationType($paginationType);
-        }
-
-        return null;
-    }
-
     /**
-     * @param  \Nuwave\Lighthouse\Schema\AST\DocumentAST  $documentAST
-     * @return \GraphQL\Language\AST\ObjectTypeDefinitionNode|null
-     *
-     * @throws \Nuwave\Lighthouse\Exceptions\DirectiveException
+     * @throws \Nuwave\Lighthouse\Exceptions\DefinitionException
      */
     protected function edgeType(DocumentAST $documentAST): ?ObjectTypeDefinitionNode
     {
-        if ($edgeType = $this->directiveArgValue('edgeType')) {
-            if (! isset($documentAST->types[$edgeType])) {
-                throw new DirectiveException(
-                    'The edgeType argument on '.$this->nodeName().' must reference an existing type definition'
+        if ($edgeTypeName = $this->directiveArgValue('edgeType')) {
+            $edgeType = $documentAST->types[$edgeTypeName] ?? null;
+            if (! $edgeType instanceof ObjectTypeDefinitionNode) {
+                throw new DefinitionException(
+                    "The edgeType argument on {$this->nodeName()} must reference an existing object type definition."
                 );
             }
 
-            return $documentAST->types[$edgeType];
+            return $edgeType;
         }
 
         return null;
     }
 
     /**
-     * Get either the specific max or the global setting.
-     *
-     * @return int|null
+     * @param  array<string, mixed>  $args
      */
-    protected function paginateMaxCount(): ?int
+    protected function paginationArgs(array $args): ?PaginationArgs
+    {
+        $paginationType = $this->paginationType();
+
+        return $paginationType !== null
+            ? PaginationArgs::extractArgs($args, $paginationType, $this->paginationMaxCount())
+            : null;
+    }
+
+    protected function paginationType(): ?PaginationType
+    {
+        $type = $this->directiveArgValue('type');
+
+        return $type !== null
+            ? new PaginationType($type)
+            : null;
+    }
+
+    protected function paginationMaxCount(): ?int
     {
         return $this->directiveArgValue('maxCount')
-            ?? config('lighthouse.paginate_max_count');
+            ?? config('lighthouse.pagination.max_count');
+    }
+
+    protected function paginationDefaultCount(): ?int
+    {
+        return $this->directiveArgValue('defaultCount')
+            ?? config('lighthouse.pagination.default_count');
     }
 }

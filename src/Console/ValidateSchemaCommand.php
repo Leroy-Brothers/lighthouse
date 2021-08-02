@@ -2,38 +2,52 @@
 
 namespace Nuwave\Lighthouse\Console;
 
+use GraphQL\Type\Schema;
 use Illuminate\Console\Command;
-use Illuminate\Contracts\Cache\Repository;
-use Nuwave\Lighthouse\GraphQL;
+use Illuminate\Contracts\Events\Dispatcher as EventsDispatcher;
+use Nuwave\Lighthouse\Events\ValidateSchema;
+use Nuwave\Lighthouse\Schema\DirectiveLocator;
+use Nuwave\Lighthouse\Schema\Factories\DirectiveFactory;
+use Nuwave\Lighthouse\Schema\FallbackTypeNodeConverter;
+use Nuwave\Lighthouse\Schema\SchemaBuilder;
+use Nuwave\Lighthouse\Schema\TypeRegistry;
 
 class ValidateSchemaCommand extends Command
 {
-    /**
-     * The name and signature of the console command.
-     *
-     * @var string
-     */
-    protected $signature = 'lighthouse:validate-schema';
-    /**
-     * The console command description.
-     *
-     * @var string
-     */
+    protected $name = 'lighthouse:validate-schema';
+
     protected $description = 'Validate the GraphQL schema definition.';
 
-    /**
-     * Execute the console command.
-     *
-     * @param  \Illuminate\Contracts\Cache\Repository  $cache
-     * @param  \Nuwave\Lighthouse\GraphQL  $graphQL
-     * @return void
-     */
-    public function handle(Repository $cache, GraphQL $graphQL): void
-    {
+    public function handle(
+        EventsDispatcher $eventsDispatcher,
+        SchemaBuilder $schemaBuilder,
+        DirectiveLocator $directiveLocator,
+        TypeRegistry $typeRegistry
+    ): void {
         // Clear the cache so this always validates the current schema
-        $cache->forget(config('lighthouse.cache.key'));
+        $this->call(ClearCacheCommand::NAME);
 
-        $graphQL->prepSchema()->assertValid();
+        $originalSchema = $schemaBuilder->schema();
+        $schemaConfig = $originalSchema->getConfig();
+
+        // We add schema directive definitions only here, since it is very slow
+        $directiveFactory = new DirectiveFactory(
+            new FallbackTypeNodeConverter($typeRegistry)
+        );
+        foreach ($directiveLocator->definitions() as $directiveDefinition) {
+            // TODO consider a solution that feels less hacky
+            if ($directiveDefinition->name->value !== 'deprecated') {
+                $schemaConfig->directives [] = $directiveFactory->handle($directiveDefinition);
+            }
+        }
+
+        $schema = new Schema($schemaConfig);
+        $schema->assertValid();
+
+        // Allow plugins to do their own schema validations
+        $eventsDispatcher->dispatch(
+            new ValidateSchema($schema)
+        );
 
         $this->info('The defined schema is valid.');
     }

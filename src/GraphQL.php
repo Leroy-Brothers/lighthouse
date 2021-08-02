@@ -2,147 +2,180 @@
 
 namespace Nuwave\Lighthouse;
 
+use GraphQL\Error\DebugFlag;
 use GraphQL\Error\Error;
+use GraphQL\Error\SyntaxError;
 use GraphQL\Executor\ExecutionResult;
 use GraphQL\GraphQL as GraphQLBase;
+use GraphQL\Language\Parser;
+use GraphQL\Server\Helper as GraphQLHelper;
+use GraphQL\Server\OperationParams;
+use GraphQL\Server\RequestError;
 use GraphQL\Type\Schema;
-use GraphQL\Validator\DocumentValidator;
-use GraphQL\Validator\Rules\DisableIntrospection;
-use GraphQL\Validator\Rules\QueryComplexity;
-use GraphQL\Validator\Rules\QueryDepth;
+use Illuminate\Contracts\Config\Repository as ConfigRepository;
 use Illuminate\Contracts\Events\Dispatcher as EventDispatcher;
+use Illuminate\Pipeline\Pipeline;
+use Illuminate\Support\Collection;
 use Nuwave\Lighthouse\Events\BuildExtensionsResponse;
+use Nuwave\Lighthouse\Events\EndExecution;
+use Nuwave\Lighthouse\Events\EndOperationOrOperations;
 use Nuwave\Lighthouse\Events\ManipulateResult;
 use Nuwave\Lighthouse\Events\StartExecution;
+use Nuwave\Lighthouse\Events\StartOperationOrOperations;
+use Nuwave\Lighthouse\Execution\BatchLoader\BatchLoaderRegistry;
 use Nuwave\Lighthouse\Execution\DataLoader\BatchLoader;
-use Nuwave\Lighthouse\Execution\GraphQLRequest;
-use Nuwave\Lighthouse\Schema\AST\ASTBuilder;
-use Nuwave\Lighthouse\Schema\AST\DocumentAST;
+use Nuwave\Lighthouse\Execution\ErrorPool;
 use Nuwave\Lighthouse\Schema\SchemaBuilder;
-use Nuwave\Lighthouse\Support\Contracts\CreatesContext;
 use Nuwave\Lighthouse\Support\Contracts\GraphQLContext;
-use Nuwave\Lighthouse\Support\Pipeline;
+use Nuwave\Lighthouse\Support\Contracts\ProvidesValidationRules;
+use Nuwave\Lighthouse\Support\Utils as LighthouseUtils;
 
+/**
+ * The main entrypoint to start and end GraphQL execution.
+ */
 class GraphQL
 {
     /**
-     * The executable schema.
-     *
-     * @var \GraphQL\Type\Schema
-     */
-    protected $executableSchema;
-
-    /**
-     * The schema builder.
-     *
      * @var \Nuwave\Lighthouse\Schema\SchemaBuilder
      */
     protected $schemaBuilder;
 
     /**
-     * The pipeline.
-     *
-     * @var \Nuwave\Lighthouse\Support\Pipeline
+     * @var \Illuminate\Pipeline\Pipeline
      */
     protected $pipeline;
 
     /**
-     * The event dispatcher.
-     *
      * @var \Illuminate\Contracts\Events\Dispatcher
      */
     protected $eventDispatcher;
 
     /**
-     * The AST builder.
-     *
-     * @var \Nuwave\Lighthouse\Schema\AST\ASTBuilder
+     * @var \Nuwave\Lighthouse\Execution\ErrorPool
      */
-    protected $astBuilder;
+    protected $errorPool;
 
     /**
-     * The context factory.
-     *
-     * @var \Nuwave\Lighthouse\Support\Contracts\CreatesContext
+     * @var \Nuwave\Lighthouse\Support\Contracts\ProvidesValidationRules
      */
-    protected $createsContext;
+    protected $providesValidationRules;
 
     /**
-     * GraphQL constructor.
-     *
-     * @param  \Nuwave\Lighthouse\Schema\SchemaBuilder  $schemaBuilder
-     * @param  \Nuwave\Lighthouse\Support\Pipeline  $pipeline
-     * @param  \Illuminate\Contracts\Events\Dispatcher  $eventDispatcher
-     * @param  \Nuwave\Lighthouse\Schema\AST\ASTBuilder  $astBuilder
-     * @param  \Nuwave\Lighthouse\Support\Contracts\CreatesContext  $createsContext
-     * @return void
+     * @var \GraphQL\Server\Helper
      */
+    protected $graphQLHelper;
+
+    /**
+     * @var \Illuminate\Contracts\Config\Repository
+     */
+    protected $configRepository;
+
+    /**
+     * Lazily initialized.
+     *
+     * @var \Closure(
+     *   array<\GraphQL\Error\Error> $errors,
+     *   callable(\GraphQL\Error\Error $error): ?array<string, mixed>
+     * ): array<string, mixed>
+     */
+    protected $errorsHandler;
+
     public function __construct(
         SchemaBuilder $schemaBuilder,
         Pipeline $pipeline,
         EventDispatcher $eventDispatcher,
-        ASTBuilder $astBuilder,
-        CreatesContext $createsContext
+        ErrorPool $errorPool,
+        ProvidesValidationRules $providesValidationRules,
+        GraphQLHelper $graphQLHelper,
+        ConfigRepository $configRepository
     ) {
         $this->schemaBuilder = $schemaBuilder;
         $this->pipeline = $pipeline;
         $this->eventDispatcher = $eventDispatcher;
-        $this->astBuilder = $astBuilder;
-        $this->createsContext = $createsContext;
+        $this->errorPool = $errorPool;
+        $this->providesValidationRules = $providesValidationRules;
+        $this->graphQLHelper = $graphQLHelper;
+        $this->configRepository = $configRepository;
     }
 
     /**
-     * Execute a set of batched queries on the lighthouse schema and return a
-     * collection of ExecutionResults.
+     * Run one ore more GraphQL operations against the schema.
      *
-     * @param  \Nuwave\Lighthouse\Execution\GraphQLRequest  $request
-     * @return mixed[]
+     * @param  \GraphQL\Server\OperationParams|array<int, \GraphQL\Server\OperationParams>  $operationOrOperations
+     * @return array<string, mixed>|array<int, array<string, mixed>>
      */
-    public function executeRequest(GraphQLRequest $request): array
+    public function executeOperationOrOperations($operationOrOperations, GraphQLContext $context): array
     {
+        $this->eventDispatcher->dispatch(
+            new StartOperationOrOperations($operationOrOperations)
+        );
+
+        $resultOrResults = LighthouseUtils::applyEach(
+            /**
+             * @return array<string, mixed>
+             */
+            function (OperationParams $operationParams) use ($context): array {
+                return $this->executeOperation($operationParams, $context);
+            },
+            $operationOrOperations
+        );
+
+        $this->eventDispatcher->dispatch(
+            new EndOperationOrOperations($resultOrResults)
+        );
+
+        return $resultOrResults;
+    }
+
+    /**
+     * Run a single GraphQL operation against the schema and get a result.
+     *
+     * @return array<string, mixed>
+     */
+    public function executeOperation(OperationParams $params, GraphQLContext $context): array
+    {
+        $errors = $this->graphQLHelper->validateOperationParams($params);
+
+        $query = $params->query;
+        if (! is_string($query) || $query === '') {
+            $errors[] = new RequestError(
+                'GraphQL Request parameter "query" is required and must not be empty.'
+            );
+        }
+
+        if (count($errors) > 0) {
+            $errors = array_map(
+                static function (RequestError $err): Error {
+                    return Error::createLocatedError($err);
+                },
+                $errors
+            );
+
+            return $this->serializable(
+                new ExecutionResult(null, $errors)
+            );
+        }
+        /** @var string $query Otherwise we would have bailed with an error */
         $result = $this->executeQuery(
-            $request->query(),
-            $this->createsContext->generate(
-                app('request')
-            ),
-            $request->variables(),
+            $query,
+            $context,
+            $params->variables,
             null,
-            $request->operationName()
+            $params->operation
         );
 
-        return $this->applyDebugSettings($result);
+        return $this->serializable($result);
     }
 
     /**
-     * Apply the debug settings from the config and get the result as an array.
+     * Execute a GraphQL query on the Lighthouse schema and return the raw result.
      *
-     * @param  \GraphQL\Executor\ExecutionResult  $result
-     * @return mixed[]
-     */
-    public function applyDebugSettings(ExecutionResult $result): array
-    {
-        // If debugging is set to false globally, do not add GraphQL specific
-        // debugging info either. If it is true, then we fetch the debug
-        // level from the Lighthouse configuration.
-        return $result->toArray(
-            config('app.debug')
-                ? config('lighthouse.debug')
-                : false
-        );
-    }
-
-    /**
-     * Execute a GraphQL query on the Lighthouse schema and return the raw ExecutionResult.
-     *
-     * To render the ExecutionResult, you will probably want to call `->toArray($debug)` on it,
-     * with $debug being a combination of flags in \GraphQL\Error\Debug
+     * To render the @see ExecutionResult, you will probably want to call `->toArray($debug)` on it,
+     * with $debug being a combination of flags in @see \GraphQL\Error\DebugFlag
      *
      * @param  string|\GraphQL\Language\AST\DocumentNode  $query
-     * @param  \Nuwave\Lighthouse\Support\Contracts\GraphQLContext  $context
-     * @param  mixed[]  $variables
+     * @param  array<string, mixed>|null  $variables
      * @param  mixed|null  $rootValue
-     * @param  string|null  $operationName
-     * @return \GraphQL\Executor\ExecutionResult
      */
     public function executeQuery(
         $query,
@@ -151,115 +184,141 @@ class GraphQL
         $rootValue = null,
         ?string $operationName = null
     ): ExecutionResult {
+        // TODO make executeQuery require a DocumentNode and move this parsing out of here
+        if (is_string($query)) {
+            try {
+                $query = Parser::parse($query);
+            } catch (SyntaxError $syntaxError) {
+                return new ExecutionResult(null, [$syntaxError]);
+            }
+        }
+
         // Building the executable schema might take a while to do,
         // so we do it before we fire the StartExecution event.
         // This allows tracking the time for batched queries independently.
-        $this->prepSchema();
+        $schema = $this->schemaBuilder->schema();
 
         $this->eventDispatcher->dispatch(
-            new StartExecution
+            new StartExecution($query, $variables, $operationName, $context)
         );
 
         $result = GraphQLBase::executeQuery(
-            $this->executableSchema,
+            $schema,
             $query,
             $rootValue,
             $context,
             $variables,
             $operationName,
             null,
-            $this->getValidationRules() + DocumentValidator::defaultRules()
+            $this->providesValidationRules->validationRules()
         );
 
-        /** @var \Nuwave\Lighthouse\Execution\ExtensionsResponse[] $extensionsResponses */
+        /** @var array<\Nuwave\Lighthouse\Execution\ExtensionsResponse|null> $extensionsResponses */
         $extensionsResponses = (array) $this->eventDispatcher->dispatch(
             new BuildExtensionsResponse
         );
 
         foreach ($extensionsResponses as $extensionsResponse) {
-            if ($extensionsResponse) {
+            if ($extensionsResponse !== null) {
                 $result->extensions[$extensionsResponse->key()] = $extensionsResponse->content();
             }
         }
 
-        $result->setErrorsHandler(
-            function (array $errors, callable $formatter): array {
-                // User defined error handlers, implementing \Nuwave\Lighthouse\Execution\ErrorHandler
-                // This allows the user to register multiple handlers and pipe the errors through.
-                $handlers = config('lighthouse.error_handlers', []);
-
-                return array_map(
-                    function (Error $error) use ($handlers, $formatter) {
-                        return $this->pipeline
-                            ->send($error)
-                            ->through($handlers)
-                            ->then(function (Error $error) use ($formatter) {
-                                return $formatter($error);
-                            });
-                    },
-                    $errors
-                );
-            }
-        );
+        foreach ($this->errorPool->errors() as $error) {
+            $result->errors [] = $error;
+        }
 
         // Allow listeners to manipulate the result after each resolved query
         $this->eventDispatcher->dispatch(
             new ManipulateResult($result)
         );
 
-        $this->cleanUp();
+        $this->eventDispatcher->dispatch(
+            new EndExecution($result)
+        );
+
+        $this->cleanUpAfterExecution();
 
         return $result;
+    }
+
+    protected function cleanUpAfterExecution(): void
+    {
+        BatchLoaderRegistry::forgetInstances();
+        $this->errorPool->clear();
+
+        // TODO remove in v6
+        BatchLoader::forgetInstances();
+    }
+
+    /**
+     * Convert the result to a serializable array.
+     *
+     * @return array<string, mixed>
+     */
+    public function serializable(ExecutionResult $result): array
+    {
+        $result->setErrorsHandler($this->errorsHandler());
+
+        return $result->toArray($this->debugFlag());
+    }
+
+    /**
+     * @return \Closure(
+     *   array<\GraphQL\Error\Error> $errors,
+     *   callable(\GraphQL\Error\Error $error): ?array<string, mixed>
+     * ): array<string, mixed>
+     */
+    protected function errorsHandler(): \Closure
+    {
+        if (! isset($this->errorsHandler)) {
+            $this->errorsHandler = function (array $errors, callable $formatter): array {
+                // User defined error handlers, implementing \Nuwave\Lighthouse\Execution\ErrorHandler
+                // This allows the user to register multiple handlers and pipe the errors through.
+                $handlers = [];
+                foreach ($this->configRepository->get('lighthouse.error_handlers', []) as $handlerClass) {
+                    $handlers [] = app($handlerClass);
+                }
+
+                return (new Collection($errors))
+                    ->map(function (Error $error) use ($handlers, $formatter): ?array {
+                        return $this->pipeline
+                            ->send($error)
+                            ->through($handlers)
+                            ->then(function (?Error $error) use ($formatter): ?array {
+                                if ($error === null) {
+                                    return null;
+                                }
+
+                                return $formatter($error);
+                            });
+                    })
+                    ->filter()
+                    ->all();
+            };
+        }
+
+        return $this->errorsHandler;
+    }
+
+    protected function debugFlag(): int
+    {
+        // If debugging is set to false globally, do not add GraphQL specific
+        // debugging info either. If it is true, then we fetch the debug
+        // level from the Lighthouse configuration.
+        return $this->configRepository->get('app.debug')
+            ? (int) $this->configRepository->get('lighthouse.debug')
+            : DebugFlag::NONE;
     }
 
     /**
      * Ensure an executable GraphQL schema is present.
      *
-     * @return \GraphQL\Type\Schema
+     * @deprecated
+     * @see \Nuwave\Lighthouse\Schema\SchemaBuilder::schema()
      */
     public function prepSchema(): Schema
     {
-        if (empty($this->executableSchema)) {
-            $this->executableSchema = $this->schemaBuilder->build(
-                $this->astBuilder->documentAST()
-            );
-        }
-
-        return $this->executableSchema;
-    }
-
-    /**
-     * Construct the validation rules with values given in the config.
-     *
-     * @return \GraphQL\Validator\Rules\ValidationRule[]
-     */
-    protected function getValidationRules(): array
-    {
-        return [
-            QueryComplexity::class => new QueryComplexity(config('lighthouse.security.max_query_complexity', 0)),
-            QueryDepth::class => new QueryDepth(config('lighthouse.security.max_query_depth', 0)),
-            DisableIntrospection::class => new DisableIntrospection(config('lighthouse.security.disable_introspection', false)),
-        ];
-    }
-
-    /**
-     * Clean up after executing a query.
-     *
-     * @return void
-     */
-    protected function cleanUp(): void
-    {
-        BatchLoader::forgetInstances();
-    }
-
-    /**
-     * Get instance of DocumentAST.
-     *
-     * @deprecated use ASTBuilder instead
-     * @return \Nuwave\Lighthouse\Schema\AST\DocumentAST
-     */
-    public function documentAST(): DocumentAST
-    {
-        return $this->astBuilder->documentAST();
+        return $this->schemaBuilder->schema();
     }
 }

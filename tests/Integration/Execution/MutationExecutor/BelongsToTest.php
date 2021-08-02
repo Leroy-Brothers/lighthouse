@@ -80,7 +80,7 @@ class BelongsToTest extends DBTestCase
     }
     '.self::PLACEHOLDER_QUERY;
 
-    public function testCanCreateAndConnectWithBelongsTo(): void
+    public function testCreateAndConnectWithBelongsTo(): void
     {
         factory(User::class)->create();
 
@@ -112,7 +112,33 @@ class BelongsToTest extends DBTestCase
         ]);
     }
 
-    public function testCanUpsertUsingCreateAndConnectWithBelongsTo(): void
+    public function testBelongsToExplicitNullHasNoEffect(): void
+    {
+        $this->graphQL(/** @lang GraphQL */ '
+        mutation {
+            createTask(input: {
+                name: "foo"
+                user: null
+            }) {
+                id
+                name
+                user {
+                    id
+                }
+            }
+        }
+        ')->assertJson([
+            'data' => [
+                'createTask' => [
+                    'id' => '1',
+                    'name' => 'foo',
+                    'user' => null,
+                ],
+            ],
+        ]);
+    }
+
+    public function testUpsertUsingCreateAndConnectWithBelongsTo(): void
     {
         factory(User::class)->create();
 
@@ -181,7 +207,7 @@ class BelongsToTest extends DBTestCase
         ]);
     }
 
-    public function testCanCreateWithNewBelongsTo(): void
+    public function testCreateWithNewBelongsTo(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -213,7 +239,7 @@ class BelongsToTest extends DBTestCase
         ]);
     }
 
-    public function testCanUpsertWithNewBelongsTo(): void
+    public function testUpsertWithNewBelongsTo(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -246,7 +272,7 @@ class BelongsToTest extends DBTestCase
         ]);
     }
 
-    public function testUpsertBelongsToWithoutId()
+    public function testUpsertBelongsToWithoutId(): void
     {
         $this->graphQL(/** @lang GraphQL */ <<<'GRAPHQL'
         mutation {
@@ -279,7 +305,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreateWithNewBelongsTo(): void
+    public function testUpsertUsingCreateWithNewBelongsTo(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -312,7 +338,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreateWithNewUpsertBelongsTo(): void
+    public function testUpsertUsingCreateWithNewUpsertBelongsTo(): void
     {
         $this->graphQL(/** @lang GraphQL */ '
         mutation {
@@ -346,7 +372,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanCreateAndUpdateBelongsTo(): void
+    public function testCreateAndUpdateBelongsTo(): void
     {
         factory(User::class)->create([
             'name' => 'foo',
@@ -385,7 +411,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreateAndUpdateBelongsTo(): void
+    public function testUpsertUsingCreateAndUpdateBelongsTo(): void
     {
         factory(User::class)->create([
             'name' => 'foo',
@@ -425,7 +451,7 @@ GRAPHQL
         ]);
     }
 
-    public function testCanUpsertUsingCreateAndUpdateUsingUpsertBelongsTo(): void
+    public function testUpsertUsingCreateAndUpdateUsingUpsertBelongsTo(): void
     {
         factory(User::class)->create([
             'name' => 'foo',
@@ -465,7 +491,10 @@ GRAPHQL
         ]);
     }
 
-    public function existingModelMutations()
+    /**
+     * @return array<array<string, string>>
+     */
+    public function existingModelMutations(): array
     {
         return [
             ['Update action' => 'update'],
@@ -476,7 +505,7 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanUpdateAndDisconnectBelongsTo(string $action): void
+    public function testUpdateAndDisconnectBelongsTo(string $action): void
     {
         /** @var \Tests\Utils\Models\Task $task */
         $task = factory(Task::class)->create();
@@ -509,21 +538,21 @@ GRAPHQL
             ],
         ]);
 
-        $this->assertTrue(
-            User::find(1)->exists,
+        $this->assertNotNull(
+            User::find(1),
             'Must not delete the second model.'
         );
 
-        $this->assertNull(
-            Task::find(1)->user,
-            'Must disconnect the parent relationship.'
-        );
+        /** @var \Tests\Utils\Models\Task $task */
+        $task = Task::findOrFail(1);
+        $this->assertNull($task->user, 'Must disconnect the parent relationship.');
     }
 
-    public function testCanCreateUsingUpsertAndDisconnectBelongsTo(): void
+    public function testCreateUsingUpsertAndDisconnectBelongsTo(): void
     {
         /** @var \Tests\Utils\Models\User $user */
         $user = factory(User::class)->create();
+        /** @var \Tests\Utils\Models\Task $task */
         $task = $user->tasks()->save(
             factory(Task::class)->make()
         );
@@ -555,12 +584,13 @@ GRAPHQL
         ]);
 
         $this->assertTrue(
-            User::find($user->id)->exists,
+            User::findOrFail($user->id)->exists,
             'Must not delete the second model.'
         );
 
+        $task->refresh();
         $this->assertNull(
-            $task->refresh()->user_id,
+            $task->user_id,
             'Must disconnect the parent relationship.'
         );
     }
@@ -568,10 +598,11 @@ GRAPHQL
     /**
      * @dataProvider existingModelMutations
      */
-    public function testCanUpdateAndDeleteBelongsTo(string $action): void
+    public function testUpdateAndDeleteBelongsTo(string $action): void
     {
         /** @var \Tests\Utils\Models\User $user */
         $user = factory(User::class)->create();
+        /** @var \Tests\Utils\Models\Task $task */
         $task = $user->tasks()->save(
             factory(Task::class)->make()
         );
@@ -608,13 +639,14 @@ GRAPHQL
             'This model should be deleted.'
         );
 
+        $task->refresh();
         $this->assertNull(
-            $task->refresh()->user_id,
+            $task->user_id,
             'Must disconnect the parent relationship.'
         );
     }
 
-    public function testCanCreateUsingUpsertAndDeleteBelongsTo(): void
+    public function testCreateUsingUpsertAndDeleteBelongsTo(): void
     {
         factory(User::class)->create();
 
@@ -650,7 +682,7 @@ GRAPHQL
         );
 
         $this->assertNull(
-            Task::find(1)->user,
+            Task::findOrFail(1)->user,
             'Must disconnect the parent relationship.'
         );
     }
@@ -662,6 +694,7 @@ GRAPHQL
     {
         /** @var \Tests\Utils\Models\User $user */
         $user = factory(User::class)->create();
+        /** @var \Tests\Utils\Models\Task $task */
         $task = $user->tasks()->save(
             factory(Task::class)->make()
         );
@@ -696,9 +729,14 @@ GRAPHQL
             ],
         ]);
 
+        $task->refresh();
+
+        $taskUser = $task->user;
+        $this->assertNotNull($taskUser);
+
         $this->assertSame(
             $user->id,
-            $task->refresh()->user->id,
+            $taskUser->id,
             'The parent relationship remains untouched.'
         );
     }
@@ -804,6 +842,7 @@ GRAPHQL
         }
 
         input UpsertRoleUserPivotInput {
+            id: ID
             role: UpsertRoleBelongsTo
         }
 
@@ -816,7 +855,7 @@ GRAPHQL
             name: String!
             users: UpsertRoleUsersRelation
         }
-        
+
         input UpsertRoleUsersRelation {
             sync: [ID!]
         }
@@ -861,7 +900,7 @@ GRAPHQL
         ]);
 
         // The first User has the first Role.
-        $role = Role::first();
+        $role = Role::firstOrFail();
         $this->assertEquals([1], $role->users()->pluck('users.id')->toArray());
 
         // Create another User.
@@ -874,6 +913,7 @@ GRAPHQL
                 name: "fooz"
                 rolesPivot: {
                     upsert: [{
+                        id: "1"
                         role: {
                             upsert: {
                                 id: "1"
@@ -905,5 +945,217 @@ GRAPHQL
         ]);
 
         $this->assertEquals([2], $role->users()->pluck('users.id')->toArray());
+    }
+
+    public function testCreateMultipleBelongsToThatDontExistYet(): void
+    {
+        $this->schema = /** @lang GraphQL */ '
+        type RoleUserPivot {
+            id: ID!
+            user: User!
+            role: Role!
+        }
+
+        type User {
+            id: ID!
+            name: String!
+        }
+
+        type Role {
+            id: ID!
+            name: String!
+        }
+
+        type Mutation {
+            createRoleUser(
+                input: RoleUserInput! @spread
+            ): RoleUserPivot @create
+        }
+
+        input RoleUserInput {
+            id: ID!
+            user: UserInput!
+            role: RoleInput!
+        }
+
+        input UserInput {
+            create: CreateUserInput
+        }
+
+        input CreateUserInput {
+            id: ID!
+            name: String!
+        }
+
+        input RoleInput {
+            create: CreateRoleInput
+        }
+
+        input CreateRoleInput {
+            id: ID!
+            name: String!
+        }
+        '.self::PLACEHOLDER_QUERY;
+
+        $this->graphQL(/** @lang GraphQL */ '
+        mutation {
+            createRoleUser(input: {
+                id: "1"
+                user: {
+                    create: {
+                        id: "2"
+                        name: "user 1"
+                    }
+                }
+                role: {
+                    create: {
+                        id: "3",
+                        name: "role 1"
+                    }
+                }
+            }) {
+                id
+                user {
+                    id
+                    name
+                }
+                role {
+                    id
+                    name
+                }
+            }
+        }
+        ')->assertJson([
+            'data' => [
+                'createRoleUser' => [
+                    'id' => '1',
+                    'user' => [
+                        'id' => '2',
+                        'name' => 'user 1',
+                    ],
+                    'role' => [
+                        'id' => '3',
+                        'name' => 'role 1',
+                    ],
+                ],
+            ],
+        ]);
+    }
+
+    public function testCreateMultipleBelongsToThatDontExistYetWithExistingRecords(): void
+    {
+        $this->schema = /** @lang GraphQL */ '
+        type RoleUserPivot {
+            id: ID!
+            meta: String
+            user: User!
+            role: Role!
+        }
+
+        type User {
+            id: ID!
+            name: String!
+        }
+
+        type Role {
+            id: ID!
+            name: String!
+        }
+
+        type Mutation {
+            createRoleUser(
+                input: RoleUserInput! @spread
+            ): RoleUserPivot @create
+        }
+
+        input RoleUserInput {
+            id: ID
+            meta: String
+            user: UserInput!
+            role: RoleInput!
+        }
+
+        input UserInput {
+            create: CreateUserInput
+        }
+
+        input CreateUserInput {
+            id: ID
+            name: String!
+        }
+
+        input RoleInput {
+            create: CreateRoleInput
+        }
+
+        input CreateRoleInput {
+            id: ID
+            name: String!
+        }
+        '.self::PLACEHOLDER_QUERY;
+
+        $query = /** @lang GraphQL */ '
+        mutation {
+            createRoleUser(input: {
+                meta: "asdf"
+                user: {
+                    create: {
+                        name: "some username"
+                    }
+                }
+                role: {
+                    create: {
+                        name: "some rolename"
+                    }
+                }
+            }) {
+                id
+                meta
+                user {
+                    id
+                    name
+                }
+                role {
+                    id
+                    name
+                }
+            }
+        }';
+
+        // This must first create a user, then a role, then attach them to the pivot
+        $this->graphQL($query)->assertJson([
+            'data' => [
+                'createRoleUser' => [
+                    'id' => '1',
+                    'meta' => 'asdf',
+                    'user' => [
+                        'id' => '1',
+                        'name' => 'some username',
+                    ],
+                    'role' => [
+                        'id' => '1',
+                        'name' => 'some rolename',
+                    ],
+                ],
+            ],
+        ]);
+
+        // We should be able to repeat this query and create new entries the same way
+        $this->graphQL($query)->assertJson([
+            'data' => [
+                'createRoleUser' => [
+                    'id' => '2',
+                    'meta' => 'asdf',
+                    'user' => [
+                        'id' => '2',
+                        'name' => 'some username',
+                    ],
+                    'role' => [
+                        'id' => '2',
+                        'name' => 'some rolename',
+                    ],
+                ],
+            ],
+        ]);
     }
 }

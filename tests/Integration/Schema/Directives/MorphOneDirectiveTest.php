@@ -30,7 +30,7 @@ class MorphOneDirectiveTest extends DBTestCase
      */
     protected $image;
 
-    protected function setUp(): void
+    public function setUp(): void
     {
         parent::setUp();
 
@@ -45,13 +45,11 @@ class MorphOneDirectiveTest extends DBTestCase
             );
     }
 
-    public function testCanResolveMorphOneRelationship(): void
+    public function testResolveMorphOneRelationship(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type Image {
             id: ID!
-            from: String
-            to: String
         }
 
         type Task {
@@ -74,8 +72,6 @@ class MorphOneDirectiveTest extends DBTestCase
                 name
                 image {
                     id
-                    from
-                    to
                 }
             }
         }
@@ -88,21 +84,17 @@ class MorphOneDirectiveTest extends DBTestCase
                     'name' => $this->task->name,
                     'image' => [
                         'id' => $this->image->id,
-                        'from' => $this->image->from,
-                        'to' => $this->image->to,
                     ],
                 ],
             ],
         ]);
     }
 
-    public function testCanResolveMorphOneWithCustomName(): void
+    public function testResolveMorphOneWithCustomName(): void
     {
         $this->schema = /** @lang GraphQL */ '
         type Image {
             id: ID!
-            from: String
-            to: String
         }
 
         type Task {
@@ -125,8 +117,6 @@ class MorphOneDirectiveTest extends DBTestCase
                 name
                 customImage {
                     id
-                    from
-                    to
                 }
             }
         }
@@ -139,8 +129,6 @@ class MorphOneDirectiveTest extends DBTestCase
                     'name' => $this->task->name,
                     'customImage' => [
                         'id' => $this->image->id,
-                        'from' => $this->image->from,
-                        'to' => $this->image->to,
                     ],
                 ],
             ],

@@ -10,7 +10,7 @@ class NestedManyToMany implements ArgResolver
     /**
      * @var string
      */
-    private $relationName;
+    protected $relationName;
 
     public function __construct(string $relationName)
     {
@@ -20,9 +20,8 @@ class NestedManyToMany implements ArgResolver
     /**
      * @param  \Illuminate\Database\Eloquent\Model  $parent
      * @param  \Nuwave\Lighthouse\Execution\Arguments\ArgumentSet  $args
-     * @return void
      */
-    public function __invoke($parent, $args)
+    public function __invoke($parent, $args): void
     {
         /** @var \Illuminate\Database\Eloquent\Relations\BelongsToMany|\Illuminate\Database\Eloquent\Relations\MorphToMany $relation */
         $relation = $parent->{$this->relationName}();
@@ -68,10 +67,9 @@ class NestedManyToMany implements ArgResolver
      * data to store in the pivot table. That array expects passing the id's
      * as keys, so we transform the passed arguments to match that.
      *
-     * @param  \Nuwave\Lighthouse\Execution\Arguments\Argument $args
-     * @return mixed[]
+     * @return array<mixed>
      */
-    private function generateRelationArray(Argument $args): array
+    protected function generateRelationArray(Argument $args): array
     {
         $values = $args->toPlain();
 

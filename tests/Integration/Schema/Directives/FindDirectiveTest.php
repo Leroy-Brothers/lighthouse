@@ -10,22 +10,22 @@ class FindDirectiveTest extends DBTestCase
 {
     public function testReturnsSingleUser(): void
     {
-        $userA = factory(User::class)->create(['name' => 'A']);
+        factory(User::class)->create(['name' => 'A']);
         $userB = factory(User::class)->create(['name' => 'B']);
-        $userC = factory(User::class)->create(['name' => 'C']);
+        factory(User::class)->create(['name' => 'C']);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type User {
             id: ID!
             name: String!
         }
-        
+
         type Query {
             user(id: ID @eq): User @find(model: "User")
         }
         ';
 
-        $this->graphQL("
+        $this->graphQL(/** @lang GraphQL */ "
         {
             user(id:{$userB->id}) {
                 name
@@ -41,20 +41,20 @@ class FindDirectiveTest extends DBTestCase
     public function testDefaultsToFieldTypeIfNoModelIsSupplied(): void
     {
         $userA = factory(User::class)->create(['name' => 'A']);
-        $userB = factory(User::class)->create(['name' => 'B']);
+        factory(User::class)->create(['name' => 'B']);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type User {
             id: ID!
             name: String!
         }
-        
+
         type Query {
             user(id: ID @eq): User @find
         }
         ';
 
-        $this->graphQL("
+        $this->graphQL(/** @lang GraphQL */ "
         {
             user(id:{$userA->id}) {
                 name
@@ -71,18 +71,18 @@ class FindDirectiveTest extends DBTestCase
         factory(User::class)->create(['name' => 'A']);
         factory(User::class)->create(['name' => 'B']);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type User {
             id: ID!
             name: String!
         }
-        
+
         type Query {
             user(name: String @eq): User @find(model: "User")
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         {
             user(name: "A") {
                 name
@@ -91,30 +91,30 @@ class FindDirectiveTest extends DBTestCase
         ')->assertJsonCount(1, 'errors');
     }
 
-    public function testCanUseScopes(): void
+    public function testUseScopes(): void
     {
         $companyA = factory(Company::class)->create(['name' => 'CompanyA']);
         $companyB = factory(Company::class)->create(['name' => 'CompanyB']);
         $userA = factory(User::class)->create(['name' => 'A', 'company_id' => $companyA->id]);
-        $userB = factory(User::class)->create(['name' => 'A', 'company_id' => $companyB->id]);
-        $userC = factory(User::class)->create(['name' => 'B', 'company_id' => $companyA->id]);
+        factory(User::class)->create(['name' => 'A', 'company_id' => $companyB->id]);
+        factory(User::class)->create(['name' => 'B', 'company_id' => $companyA->id]);
 
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type Company {
             name: String!
         }
-        
+
         type User {
             id: ID!
             name: String!
         }
-        
+
         type Query {
             user(name: String @eq, company: String!): User @find(model: "User" scopes: [companyName])
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         {
             user(name: "A" company: "CompanyA") {
                 id
@@ -133,29 +133,29 @@ class FindDirectiveTest extends DBTestCase
 
     public function testReturnsAnEmptyObjectWhenTheModelIsNotFound(): void
     {
-        $this->schema = '
+        $this->schema = /** @lang GraphQL */ '
         type User {
             id: ID!
             name: String!
         }
-        
+
         type Query {
             user(name: String @eq): User @find(model: "User")
         }
         ';
 
-        $this->graphQL('
+        $this->graphQL(/** @lang GraphQL */ '
         {
             user(name: "A") {
                 id
                 name
             }
         }
-        ')->assertJson([
+        ')->assertExactJson([
             'data' => [
                 'user' => null,
             ],
-        ])->assertStatus(200);
+        ]);
     }
 
     public function testReturnsCustomAttributes(): void
@@ -172,7 +172,7 @@ class FindDirectiveTest extends DBTestCase
             name: String!
             companyName: String!
         }
-        
+
         type Query {
             user(id: ID @eq): User @find(model: "User")
         }
